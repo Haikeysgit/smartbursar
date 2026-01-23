@@ -1,0 +1,52 @@
+# =============================================================================
+# PROJECT ATLAS - Python Dependencies
+# =============================================================================
+# Install: pip install -r requirements.txt
+
+# -----------------------------------------------------------------------------
+# Core Framework
+# -----------------------------------------------------------------------------
+fastapi>=0.109.0          # Async web framework for webhooks
+uvicorn>=0.27.0           # ASGI server
+pydantic>=2.0.0           # Data validation
+pydantic-settings>=2.0.0  # Settings management
+slowapi>=0.1.9            # Rate limiting for FastAPI
+
+# -----------------------------------------------------------------------------
+# Database
+# -----------------------------------------------------------------------------
+sqlalchemy>=2.0.0         # ORM (works with SQLite + PostgreSQL)
+# Note: For PostgreSQL in production, Railway auto-installs psycopg2
+
+# -----------------------------------------------------------------------------
+# Authentication
+# -----------------------------------------------------------------------------
+bcrypt>=4.1.0             # Password hashing
+python-jose[cryptography]>=3.3.0  # JWT tokens
+
+# -----------------------------------------------------------------------------
+# Utilities
+# -----------------------------------------------------------------------------
+python-dotenv>=1.0.0      # Load .env files
+phonenumbers>=8.13.0      # International phone validation (Google's library)
+pytz>=2024.1              # Timezone handling (WAT)
+
+# -----------------------------------------------------------------------------
+# PDF Generation
+# -----------------------------------------------------------------------------
+reportlab>=4.0.0          # Receipt PDF creation
+Pillow>=10.0.0            # Image handling for logos
+
+# -----------------------------------------------------------------------------
+# Dashboard
+# -----------------------------------------------------------------------------
+streamlit>=1.30.0         # Admin dashboard UI
+pandas>=2.0.0             # Data manipulation for tables
+# Note: streamlit includes plotly for charts
+
+# -----------------------------------------------------------------------------
+# Phase 2 (Comment out until needed to speed up installs)
+# -----------------------------------------------------------------------------
+# twilio>=8.0.0           # WhatsApp + SMS
+# google-generativeai>=0.3.0  # Gemini AI
+# httpx>=0.26.0           # Async HTTP for webhooks
