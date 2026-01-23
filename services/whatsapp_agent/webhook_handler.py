@@ -360,6 +360,101 @@ async def health_check(request: Request):
 
 
 # =============================================================================
+# Privacy Policy & Terms (Required for Meta Live Mode)
+# =============================================================================
+
+@app.get("/privacy")
+async def privacy_policy():
+    """Privacy Policy page for Meta app verification."""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(content="""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Privacy Policy - SmartBursar</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+        h1 { color: #333; }
+        p { line-height: 1.6; color: #555; }
+    </style>
+</head>
+<body>
+    <h1>Privacy Policy</h1>
+    <p><strong>Last updated:</strong> January 2026</p>
+    
+    <h2>Introduction</h2>
+    <p>SmartBursar ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information when you use our WhatsApp-based school fee management service.</p>
+    
+    <h2>Information We Collect</h2>
+    <p>We collect the following information:</p>
+    <ul>
+        <li>Phone numbers for WhatsApp communication</li>
+        <li>Payment receipt images submitted for verification</li>
+        <li>Student and payment information provided by schools</li>
+    </ul>
+    
+    <h2>How We Use Your Information</h2>
+    <p>We use your information to:</p>
+    <ul>
+        <li>Process and verify school fee payments</li>
+        <li>Send payment confirmations and reminders via WhatsApp</li>
+        <li>Provide customer support</li>
+    </ul>
+    
+    <h2>Data Security</h2>
+    <p>We implement appropriate security measures to protect your personal information from unauthorized access, alteration, or disclosure.</p>
+    
+    <h2>Contact Us</h2>
+    <p>If you have questions about this Privacy Policy, please contact us through the school administration.</p>
+</body>
+</html>
+    """)
+
+
+@app.get("/terms")
+async def terms_of_service():
+    """Terms of Service page for Meta app verification."""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(content="""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Terms of Service - SmartBursar</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+        h1 { color: #333; }
+        p { line-height: 1.6; color: #555; }
+    </style>
+</head>
+<body>
+    <h1>Terms of Service</h1>
+    <p><strong>Last updated:</strong> January 2026</p>
+    
+    <h2>Acceptance of Terms</h2>
+    <p>By using SmartBursar's WhatsApp service, you agree to these Terms of Service.</p>
+    
+    <h2>Description of Service</h2>
+    <p>SmartBursar provides a WhatsApp-based school fee management and verification service for schools and parents.</p>
+    
+    <h2>User Responsibilities</h2>
+    <p>Users agree to:</p>
+    <ul>
+        <li>Provide accurate payment information</li>
+        <li>Submit genuine payment receipts</li>
+        <li>Use the service only for legitimate school fee purposes</li>
+    </ul>
+    
+    <h2>Limitation of Liability</h2>
+    <p>SmartBursar is not liable for any indirect, incidental, or consequential damages arising from the use of our service.</p>
+    
+    <h2>Contact</h2>
+    <p>For questions about these terms, please contact the school administration.</p>
+</body>
+</html>
+    """)
+
+
+# =============================================================================
 # Test Endpoint (Development Only - BLOCKED IN PRODUCTION)
 # =============================================================================
 
