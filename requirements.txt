@@ -48,5 +48,6 @@ pandas>=2.0.0             # Data manipulation for tables
 # Phase 2 (Comment out until needed to speed up installs)
 # -----------------------------------------------------------------------------
 # twilio>=8.0.0           # WhatsApp + SMS
-# google-generativeai>=0.3.0  # Gemini AI
-# httpx>=0.26.0           # Async HTTP for webhooks
+google-generativeai>=0.3.0  # Gemini AI for receipt extraction
+httpx>=0.26.0           # Async HTTP for webhooks
+
