@@ -9,7 +9,11 @@ context-aware payment reminders.
 import os
 import logging
 from typing import Optional, Dict, Any
-import google.generativeai as genai
+import os
+import logging
+from typing import Optional, Dict, Any
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 # Load env to ensure we have the key
@@ -20,15 +24,12 @@ logger = logging.getLogger(__name__)
 class GeminiClient:
     def __init__(self):
         self.api_key = os.getenv("GOOGLE_API_KEY")
-        self.is_active = False
+        self.client = None
         
         if self.api_key:
             try:
-                genai.configure(api_key=self.api_key)
-                # Using gemini-2.0-flash as it is the available model
-                self.model = genai.GenerativeModel('gemini-2.0-flash')
-                self.is_active = True
-                logger.info("Gemini AI Client initialized successfully")
+                self.client = genai.Client(api_key=self.api_key)
+                logger.info("Gemini AI Client initialized successfully (google-genai SDK)")
             except Exception as e:
                 logger.warning(f"Failed to initialize Gemini AI: {e}")
         else:
@@ -37,22 +38,21 @@ class GeminiClient:
     def generate_message(self, context: Dict[str, Any], tone: str = "polite") -> Optional[str]:
         """
         Generate a payment reminder message using Gemini.
-        
-        Args:
-            context: Dictionary containing student and debt details
-            tone: 'polite', 'firm', or 'urgent'
-            
-        Returns:
-            Generated message string or None if generation fails
         """
-        if not self.is_active:
+        if not self.client:
             return None
 
         try:
             prompt = self._build_prompt(context, tone)
             
             # Generate content
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=[prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="text/plain"
+                )
+            )
             
             if response.text:
                 # SECURITY: Replace placeholders with real names LOCALLY
@@ -63,7 +63,6 @@ class GeminiClient:
             
         except Exception as e:
             logger.error(f"Error generating message with Gemini: {e}")
-            return None
             return None
 
     def _build_prompt(self, context: Dict[str, Any], tone: str) -> str:
