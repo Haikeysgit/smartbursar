@@ -61,14 +61,23 @@ class ReceiptExtractor:
             is_pdf = file_path.lower().endswith(".pdf")
             mime_type = "application/pdf" if is_pdf else "image/jpeg"
 
+            # Create prompt with robust Blob construction
+            prompt_content = [
+                self.SYSTEM_PROMPT,
+                types.Part(
+                    inline_data=types.Blob(
+                        mime_type=mime_type,
+                        data=file_bytes
+                    )
+                )
+            ]
+
             response = self.client.models.generate_content(
                 model="gemini-1.5-flash",
-                contents=[
-                    self.SYSTEM_PROMPT,
-                    types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
-                ],
+                contents=prompt_content,
                 config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
+                    response_mime_type="application/json",
+                    temperature=0.1
                 )
             )
             
@@ -76,7 +85,7 @@ class ReceiptExtractor:
             
         except Exception as e:
             logger.error(f"Receipt extraction failed: {e}")
-            return {"error": True, "reason": "AI Processing Failed"}
+            return {"error": True, "reason": f"AI Processing Failed: {str(e)}"}
 
     def extract_from_text(self, text: str) -> Dict[str, Any]:
         if not self.client:

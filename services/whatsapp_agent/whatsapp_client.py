@@ -107,14 +107,6 @@ class WhatsAppCloudAPI:
     def send_image(self, to: str, image_url: str, caption: str = "") -> Dict[str, Any]:
         """
         Send an image message.
-        
-        Args:
-            to: Recipient phone number
-            image_url: Public URL of the image
-            caption: Optional caption text
-        
-        Returns:
-            API response dict
         """
         to_clean = to.replace("+", "").replace(" ", "").replace("-", "")
         
@@ -138,6 +130,56 @@ class WhatsAppCloudAPI:
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send image: {e}")
             return {"success": False, "error": str(e)}
+
+    def send_interactive_message(self, to: str, body_text: str, buttons: list) -> Dict[str, Any]:
+        """
+        Send an interactive button message.
+        
+        Args:
+            to: Recipient phone number
+            body_text: Main message text
+            buttons: List of dicts, e.g. [{"id": "btn1", "title": "Yes"}, ...]
+                     (Max 3 buttons)
+        """
+        to_clean = to.replace("+", "").replace(" ", "").replace("-", "")
+        url = f"{self.BASE_URL}/{self.phone_number_id}/messages"
+        
+        # Format buttons for API
+        formatted_buttons = []
+        for btn in buttons[:3]: # Limit to 3
+            formatted_buttons.append({
+                "type": "reply",
+                "reply": {
+                    "id": btn.get("id"),
+                    "title": btn.get("title")
+                }
+            })
+            
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to_clean,
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": {
+                    "text": body_text
+                },
+                "action": {
+                    "buttons": formatted_buttons
+                }
+            }
+        }
+        
+        try:
+            response = requests.post(url, headers=self.headers, json=payload, timeout=30)
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to send interactive message: {e}")
+            # Fallback to text if interactive fails (e.g. 24h window issues)
+            fallback_text = body_text + "\n\n" + "\n".join([f"- {b['title']}" for b in buttons])
+            return self.send_text(to, fallback_text)
     
     def send_document(self, to: str, document_url: str, filename: str, caption: str = "") -> Dict[str, Any]:
         """
