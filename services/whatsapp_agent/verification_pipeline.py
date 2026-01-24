@@ -145,10 +145,17 @@ class VerificationPipeline:
                 # Cannot process without knowing the student
                 whatsapp_client.send_text(
                     parent_phone,
-                    "⚠️ Payment extracted, but we couldn't identify the student.\n"
-                    "Please contact the school admin directly."
+                    "⚠️ I extracted the payment details, but I couldn't match the Name on the receipt to a student.\n\n"
+                    "Please type the **Student's Full Name** so I can record this payment."
                 )
-                return {"success": False, "error": "Student not identified"}
+                return {
+                    "success": False, 
+                    "error": "Student not identified",
+                    "requires_student_info": True,
+                    "extraction": extraction,
+                    "file_path": file_path,
+                    "school_id": school_id
+                }
             
             student = db.query(Student).filter(Student.id == student_id).first()
             
@@ -228,6 +235,108 @@ class VerificationPipeline:
                 "transaction_id": transaction.id,
                 "receipt_number": receipt_num
             }
+
+    def retry_with_student_name(
+        self,
+        parent_phone: str,
+        student_name: str,
+        extraction_data: Dict[str, Any],
+        file_path: str,
+        school_id: int
+    ) -> Dict[str, Any]:
+        """
+        Retry verification when parent provides student name manually.
+        """
+        with get_db_context() as db:
+            # 1. Search for student by provided name (Fuzzy match)
+            students = db.query(Student).filter(
+                Student.school_id == school_id
+            ).all()
+            
+            # Simple fuzzy matching
+            target = student_name.lower()
+            matched_student = None
+            
+            for student in students:
+                full_name = student.full_name.lower()
+                if target in full_name or full_name in target:
+                    matched_student = student
+                    break
+            
+            if not matched_student:
+                return {"success": False, "error": "Student not found"}
+            
+            # 2. Proceed with transaction creation (Logic duplicated from process_parent_receipt - refactor ideal but copying for speed)
+            amount = Decimal(str(extraction_data.get("amount", 0)))
+            balance_before = matched_student.fees_total_due - matched_student.amount_paid
+            balance_after = balance_before - amount
+            
+            # Generate receipt number
+            payment_count = db.query(Transaction).filter(
+                Transaction.student_id == matched_student.id
+            ).count() + 1
+            
+            school = db.query(School).get(school_id)
+            receipt_num = generate_receipt_number(
+                school.school_code,
+                datetime.now().year,
+                matched_student.id,
+                payment_count
+            )
+            
+            transaction = Transaction(
+                student_id=matched_student.id,
+                amount=amount,
+                date=datetime.now(),
+                method=PaymentMethod.BANK_TRANSFER,
+                receipt_number=receipt_num,
+                status=TransactionStatus.PENDING,
+                notes=json.dumps(extraction_data),
+                proof_description=file_path,
+                receipt_hash=f"RETRY_{datetime.now().timestamp()}", # Pseudo hash for retry
+                balance_before=balance_before,
+                balance_after=balance_after
+            )
+            
+            db.add(transaction)
+            db.commit()
+            db.refresh(transaction)
+            
+            # 3. Forward to Admin
+            admin_phone = self._get_admin_phone(school)
+            if admin_phone:
+                self._forward_to_admin(
+                    admin_phone=admin_phone,
+                    transaction=transaction,
+                    extraction=extraction_data,
+                    student=matched_student,
+                    school=school,
+                    file_path=file_path
+                )
+                
+                # Track pending
+                self.pending_verifications[transaction.id] = {
+                    "parent_phone": parent_phone,
+                    "school_id": school_id,
+                    "student_id": matched_student.id,
+                    "admin_phone": admin_phone,
+                    "extraction": extraction_data,
+                    "file_path": file_path
+                }
+                
+                if admin_phone not in self.admin_pending:
+                    self.admin_pending[admin_phone] = []
+                self.admin_pending[admin_phone].append(transaction.id)
+                
+            # Notify parent
+            whatsapp_client.send_text(
+                parent_phone,
+                f"✅ Payment of ₦{amount:,.2f} recorded for **{matched_student.full_name}**.\n\n"
+                f"Reference: {receipt_num}\n"
+                "Awaiting admin approval."
+            )
+            
+            return {"success": True, "student_name": matched_student.full_name}
     
     # =========================================================================
     # Admin Flow: Verification Response

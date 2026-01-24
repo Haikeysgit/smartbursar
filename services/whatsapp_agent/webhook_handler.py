@@ -238,14 +238,11 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
 # Message Handlers (Background Tasks)
 # =============================================================================
 
+from .conversation_manager import conversation_manager
+
 async def handle_text_message(sender: str, text: str, sender_name: str):
     """
-    Handle incoming text messages.
-    
-    Could be:
-    - Admin verification reply
-    - Parent inquiry
-    - New conversation
+    Handle incoming text messages with state management.
     """
     try:
         # Check if sender is an admin with pending verifications
@@ -258,17 +255,49 @@ async def handle_text_message(sender: str, text: str, sender_name: str):
                 reply_text=text
             )
             logger.info(f"Admin reply processed: {result}")
-        else:
-            # Regular text message - send help info
-            logger.info(f"DEBUG: Attempting to reply to sender: '{sender}'")
-            result = whatsapp_client.send_text(
+            return
+
+        # --- User Flow (Parents) ---
+        sender_phone = f"+{sender}" if not sender.startswith("+") else sender
+        
+        # 1. Check if we are waiting for a Student Name (Fallback from failed receipt lookup)
+        state = conversation_manager.get_user_state(sender_phone)
+        
+        if state == "IDENTIFYING_STUDENT":
+            context = conversation_manager.get_context(sender_phone)
+            if context:
+                res = verification_pipeline.retry_with_student_name(
+                    sender_phone,
+                    text, 
+                    context.get("extraction", {}),
+                    context.get("file_path", ""),
+                    context.get("school_id")
+                )
+                
+                if res.get("success"):
+                     conversation_manager.clear_session(sender_phone)
+                else:
+                     whatsapp_client.send_text(sender, "❌ Still couldn't find a student with that name. Please check spelling or contact Admin.")
+            else:
+                conversation_manager.clear_session(sender_phone)
+                whatsapp_client.send_text(sender, "⚠️ Session expired. Please upload receipt again.")
+            return 
+
+        # 2. Get next action from Conversation Manager
+        action, reply_message = conversation_manager.handle_incoming_text(text, sender_phone)
+        
+        if action == "SEND_MENU":
+            whatsapp_client.send_interactive_message(
                 sender,
-                "👋 Hello! I'm SmartBursar, your school fee assistant.\n\n"
-                "To submit a payment:\n"
-                "📎 Send your payment receipt (image or PDF)\n\n"
-                "For other inquiries, please contact the school directly."
+                "👋 *Welcome to SmartBursar!*\n\nI can help you verify school fee payments instantly.\n\nWhat would you like to do?",
+                [
+                    {"id": "btn_pay", "title": "Submit Receipt"},
+                    {"id": "btn_status", "title": "Check Balance"}
+                ]
             )
-            logger.info(f"DEBUG: Send result: {result}")
+        
+        elif reply_message:
+            whatsapp_client.send_text(sender, reply_message)
             
     except Exception as e:
         logger.error(f"Text handler error: {e}")
@@ -336,6 +365,18 @@ async def handle_media_message(sender: str, media: dict, media_type: str, sender
             filename=filename,
             school_id=school_id
         )
+        
+        # Check if we need to ask user for student name
+        if result.get("requires_student_info"):
+            conversation_manager.update_user_state(
+                f"+{sender}" if not sender.startswith("+") else sender,
+                "IDENTIFYING_STUDENT",
+                context_update={
+                    "extraction": result["extraction"],
+                    "file_path": result["file_path"],
+                    "school_id": result["school_id"]
+                }
+            )
         
         logger.info(f"Receipt processed: {result}")
         
