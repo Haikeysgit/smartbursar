@@ -55,6 +55,17 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# =============================================================================
+# Health Check (CRITICAL FOR RAILWAY)
+# =============================================================================
+@app.get("/health")
+async def health_check():
+    """
+    Simple health check for Railway deployment.
+    Returns 200 OK immediately without checking DB/AI.
+    """
+    return {"status": "healthy", "service": "whatsapp-webhook"}
+
 
 # =============================================================================
 # Security Headers Middleware

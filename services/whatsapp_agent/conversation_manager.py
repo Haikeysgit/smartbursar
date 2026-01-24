@@ -6,7 +6,7 @@ Manages conversation state and flow for the WhatsApp bot.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
