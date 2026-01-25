@@ -43,7 +43,13 @@ def get_connection_string():
     if hasattr(settings, "DATABASE_URL") and settings.DATABASE_URL:
         return settings.DATABASE_URL
 
-    # 3. Local Default
+    # 3. Local Default (BUT CRASH IF PRODUCTION)
+    environment = os.getenv("ENVIRONMENT", "development")
+    if environment.lower() in ("production", "prod", "staging"):
+         logger.critical("CRITICAL ERROR: Running in PRODUCTION but DATABASE_URL is not set!")
+         logger.critical("You must provision a PostgreSQL database in Railway and link it.")
+         raise ValueError("DATABASE_URL missing in Production Environment")
+
     return "sqlite:///./atlas.db"
 
 
