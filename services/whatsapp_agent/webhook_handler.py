@@ -129,6 +129,7 @@ def get_user_context(phone_number: str) -> Dict[str, Any]:
         # Serialize schools to dicts
         for school in school_map.values():
             safe_schools.append({
+                "school_id": school.id,
                 "school_name": school.school_name,
                 "bank_name": school.bank_name,
                 "account_number": school.account_number,
@@ -305,11 +306,12 @@ async def handle_media_message(sender: str, media: dict, media_type: str, contex
 
     target_school = context["schools"][0]
     
+    # Schools are now dicts with school_id included
     verification_pipeline.process_parent_receipt(
         parent_phone=f"+{sender}" if not sender.startswith("+") else sender,
         file_content=file_content,
         filename=filename,
-        school_id=target_school.id
+        school_id=target_school.get("school_id")
     )
 
 # Endpoints for admin tests moved to main.py
