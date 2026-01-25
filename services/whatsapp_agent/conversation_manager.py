@@ -44,11 +44,12 @@ class BotConversationManager:
             
             response = "🏦 *School Account Details*\n\n"
             for school in schools:
+                # Handle dict access (schools are now serialized dicts)
                 response += (
-                    f"🏫 *{school.school_name}*\n"
-                    f"Bank: {school.bank_name}\n"
-                    f"Account: {school.account_number}\n"
-                    f"Name: {school.account_name}\n\n"
+                    f"🏫 *{school.get('school_name', 'School')}*\n"
+                    f"Bank: {school.get('bank_name', 'Unknown')}\n"
+                    f"Account: {school.get('account_number', 'Unknown')}\n"
+                    f"Name: {school.get('account_name', 'Unknown')}\n\n"
                 )
             
             response += "Please make a transfer and *send me the receipt* (Image/PDF) here to verify."
@@ -95,8 +96,9 @@ class BotConversationManager:
             schools = context.get("schools", [])
             admin_contact = "the school office"
             if schools:
-                # Use first school's phone
-                admin_contact = f"https://wa.me/{schools[0].phone.replace('+', '')}"
+                # Use first school's phone (handle dict access)
+                school_phone = schools[0].get("phone", "+2348000000000")
+                admin_contact = f"https://wa.me/{school_phone.replace('+', '')}"
             
             return "SEND_SUPPORT", f"📞 For support or complaints, please contact the School Admin here: {admin_contact}"
 
@@ -116,7 +118,7 @@ class BotConversationManager:
         
         ai_context = {
              "student_name": student_data.get("full_name", "Student"),
-             "school_name": school_data.school_name if hasattr(school_data, 'school_name') else "School", 
+             "school_name": school_data.get("school_name", "School"), 
              "amount_due": f"N{student_data.get('balance', 0):,.2f}",
              "due_date": str(student_data.get("due_date", "Unknown")),
              "days_overdue": student_data.get("days_until_due", 0)
