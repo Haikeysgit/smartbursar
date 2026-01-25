@@ -33,15 +33,91 @@ load_dotenv()
 from .whatsapp_client import whatsapp_client
 from .verification_pipeline import verification_pipeline
 from .conversation_manager import conversation_manager
-from config.database import get_db_context, init_db
+from config.database import get_db_context, init_db, SessionLocal, SessionLocal
 from models.student import Student
 from models.school import School
+from datetime import date
+from datetime import date
+import logging # Added explicit logging import just in case
 
-logger = logging.getLogger(__name__)
+# ... (Previous imports remain same)
 
-# Security: Get app secret for webhook signature verification
-WHATSAPP_APP_SECRET = os.getenv("WHATSAPP_APP_SECRET", "")
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+# ... (Existing code)
+
+# =============================================================================
+# Admin "GOD MODE" (For Testing)
+# =============================================================================
+
+@app.post("/admin/trigger-test")
+async def admin_trigger_test(
+    phone: str = Query(..., description="Target phone number"),
+    tone: str = Query(..., description="Tone type (term_start, exam_week)")
+):
+    """
+    Step 5: ADMIN 'GOD MODE'
+    Force a specific reminder tone to a specific number.
+    """
+    # This is a placeholder for the actual tone logic which would be in a notification service
+    # For now, we simulate the effect by sending a message
+    
+    message = f"[TEST MODE] Triggering '{tone}' reminder for {phone}"
+    
+    if tone == "term_start":
+        msg_content = "📢 *Term Start Reminder*\nWelcome back! Please ensure 50% fees are paid before resumption."
+    elif tone == "exam_week":
+        msg_content = "🎓 *Exam Week Alert*\nExams start Monday. Please clear all outstanding dues to obtain exam pass."
+    else:
+        msg_content = f"🔔 Test Reminder: {tone}"
+        
+    whatsapp_client.send_text(phone, msg_content)
+    
+    return {"status": "success", "message": message}
+
+
+@app.get("/admin/fix-my-data")
+def fix_my_data():
+    """Manual fix to seed admin data in production."""
+    # Force insert the Admin Parent
+    db = SessionLocal()
+    try:
+        # Ensure School exists (Dummy data if needed)
+        school = db.query(School).get(1)
+        if not school:
+            school = School(
+                id=1,
+                school_code="SCH001",
+                school_name="Admin Test School",
+                address="123 Test St",
+                phone="+2348000000000",
+                country_code="NG",
+                bank_name="Test Bank",
+                account_number="1234567890",
+                account_name="Test School Account",
+                subscription_end_date=date(2030, 1, 1)
+            )
+            db.add(school)
+            db.commit()
+
+        # Check if student exists first
+        existing = db.query(Student).filter(Student.parent_phone_primary == "+2348038004334").first()
+        if not existing:
+            new_student = Student(
+                full_name="Test Student",
+                parent_name="Obaseki Imisioluwa",
+                parent_phone_primary="+2348038004334",
+                school_id=1,  # Ensure School 1 exists too!
+                fees_total_due=50000,
+                amount_paid=0
+            )
+            db.add(new_student)
+            db.commit()
+            return "✅ SUCCESS: You are now registered. Go say 'Hello' to the bot."
+        return "⚠️ You were already registered."
+    except Exception as e:
+        return f"Error: {str(e)}"
+    finally:
+        db.close()
+
 
 # Rate limiting setup
 limiter = Limiter(key_func=get_remote_address)
