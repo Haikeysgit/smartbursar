@@ -26,6 +26,11 @@ class BotConversationManager:
         4. COMPLAINT: "Help", "Support", "Complaint"
         """
         text_lower = text.lower().strip()
+        logger.info(f"Analyzing Intent: raw='{text}', processed='{text_lower}'")
+        
+        # 0. DEBUG / GOD MODE
+        if "paul" in text_lower:
+             return "DEBUG_PAUL", "I heard 'Paul'. Use 'Status' to check debt or 'Pay' for account details."
         
         # 1. WANT TO PAY
         if any(word in text_lower for word in ["pay", "transfer", "account", "bank", "send money"]):
@@ -91,7 +96,8 @@ class BotConversationManager:
 
         # 4. GREETING / GENERIC (Default Fallback)
         # "If text is generic... Reply: Welcome..."
-        
+        logger.info(f"Analyzed intent for '{text}': Fallback to GREETING. (Matched nothing)")
+
         response = (
             f"👋 Welcome, *{sender_name}*.\n\n"
             "I am ready to verify your payments.\n\n"
