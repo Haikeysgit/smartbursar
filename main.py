@@ -7,7 +7,7 @@ import os
 import logging
 from datetime import date
 
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Form
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -100,47 +100,158 @@ async def admin_trigger_test(
     return {"status": "success", "message": message}
 
 
-@app.get("/admin/fix-my-data")
-def fix_my_data():
-    """Manual fix to seed admin data in production."""
+# =============================================================================
+# LIGHTWEIGHT ADMIN UI (HTML)
+# =============================================================================
+from fastapi.responses import HTMLResponse
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_dashboard():
+    """Simple HTML Dashboard to view and manage data."""
     db = SessionLocal()
     try:
-        # Ensure School exists
-        school = db.query(School).get(1)
-        if not school:
-            school = School(
-                id=1,
-                school_code="SCH001",
-                school_name="Admin Test School",
-                address="123 Test St",
-                phone="+2348000000000",
-                country_code="NG",
-                bank_name="Test Bank",
-                account_number="1234567890",
-                account_name="Test School Account",
-                subscription_end_date=date(2030, 1, 1)
-            )
-            db.add(school)
-            db.commit()
+        students = db.query(Student).all()
+        schools = db.query(School).all()
+        
+        # Build HTML Table
+        rows = ""
+        for s in students:
+            rows += f"""
+            <tr>
+                <td>{s.id}</td>
+                <td>{s.full_name}</td>
+                <td>{s.parent_phone_primary}</td>
+                <td>₦{s.fees_total_due:,.2f}</td>
+                <td>₦{s.amount_paid:,.2f}</td>
+                <td>{s.balance:,.2f}</td>
+                <td>
+                    <form action="/admin/update-payment" method="post" style="display:inline;">
+                        <input type="hidden" name="student_id" value="{s.id}">
+                        <input type="number" name="amount" placeholder="Add Payment" style="width:100px;">
+                        <button type="submit">Pay</button>
+                    </form>
+                </td>
+            </tr>
+            """
+            
+        html = f"""
+        <html>
+        <head>
+            <title>SmartBursar Mini-Admin</title>
+            <style>
+                body {{ font-family: sans-serif; padding: 2rem; max-width: 1000px; margin: 0 auto; }}
+                table {{ border-collapse: collapse; width: 100%; margin-top: 20px; }}
+                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                th {{ background-color: #f2f2f2; }}
+                .btn {{ display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
+                .btn-danger {{ background: #dc3545; }}
+            </style>
+        </head>
+        <body>
+            <h1>🎓 SmartBursar Admin (Lite)</h1>
+            <p>Manage your test data here without complex dashboards.</p>
+            
+            <div style="margin-bottom: 20px; padding: 15px; background: #e9ecef; border-radius: 8px;">
+                <h3>🛠️ Quick Actions</h3>
+                <form action="/admin/seed" method="post" style="display:inline;">
+                    <button type="submit" class="btn">🌱 Reset & Seed Test Data</button>
+                </form>
+                <p><small>This wipes the database and creates "David" (Student) linked to your number.</small></p>
+            </div>
 
-        # Check if student exists
-        existing = db.query(Student).filter(Student.parent_phone_primary == "+2348038004334").first()
-        if not existing:
-            new_student = Student(
-                full_name="Test Student",
-                parent_name="Obaseki Imisioluwa",
-                parent_phone_primary="+2348038004334",
-                class_level="JSS 1",
-                due_date=date(2026, 12, 31),
-                school_id=1,
-                fees_total_due=50000,
-                amount_paid=0
-            )
-            db.add(new_student)
-            db.commit()
-            return "✅ SUCCESS: You are now registered. Go say 'Hello' to the bot."
-        return "⚠️ You were already registered."
-    except Exception as e:
-        return f"Error: {str(e)}"
+            <h3>Students</h3>
+            <table>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Parent Phone</th>
+                    <th>Fees Due</th>
+                    <th>Paid</th>
+                    <th>Balance</th>
+                    <th>Actions</th>
+                </tr>
+                {rows}
+            </table>
+            
+            <br>
+            <h3>Registered Schools</h3>
+            <ul>
+                {"".join([f"<li>{s.school_name} (Bank: {s.bank_name})</li>" for s in schools])}
+            </ul>
+        </body>
+        </html>
+        """
+        return html
     finally:
         db.close()
+
+@app.post("/admin/seed", response_class=HTMLResponse)
+def admin_seed_data():
+    """Wipe and Reseed for Testing."""
+    db = SessionLocal()
+    try:
+        # Wipe
+        db.query(Student).delete()
+        db.query(School).delete()
+        
+        # Create School
+        school = School(
+            school_code="SCH-TEST",
+            school_name="Excel International College",
+            address="Lagos, Nigeria",
+            phone="+2348000000000",
+            bank_name="Zenith Bank",
+            account_number="1234567890",
+            account_name="Excel College Tuition",
+            country_code="NG"
+        )
+        db.add(school)
+        db.flush() 
+        
+        # Create Student
+        # HARDCODED to the number user provided in screenshot: 2349163031534
+        student = Student(
+            full_name="David Adeleke",
+            parent_name="Chief Adeleke",
+            parent_phone_primary="+2349163031534", # The number from the screenshot
+            class_level="SS 3",
+            fees_total_due=150000.00,
+            amount_paid=50000.00, # Partial payment
+            due_date=date(2026, 2, 1),
+            school_id=school.id
+        )
+        db.add(student)
+        db.commit()
+        
+        return f"""
+        <h1>✅ Data Reset!</h1>
+        <p>Created School: <b>{school.school_name}</b></p>
+        <p>Created Student: <b>{student.full_name}</b></p>
+        <p>Linked to Phone: <b>{student.parent_phone_primary}</b></p>
+        <p>Balance: <b>N{student.balance:,.2f}</b></p>
+        <br>
+        <a href="/admin">Back to Dashboard</a>
+        """
+    except Exception as e:
+        db.rollback()
+        return f"<h1>Error</h1><p>{e}</p>"
+    finally:
+        db.close()
+
+@app.post("/admin/update-payment", response_class=HTMLResponse)
+def admin_update_payment(student_id: int = Query(...), amount: float = Query(...)):
+    """Update payment for a student."""
+    db = SessionLocal()
+    try:
+        student = db.query(Student).get(student_id)
+        if student:
+            student.amount_paid += amount
+            db.commit()
+        return f"""
+        <h1>✅ Payment Updated</h1>
+        <meta http-equiv="refresh" content="1;url=/admin" />
+        <p>Redirecting...</p>
+        """
+    finally:
+        db.close()
+
