@@ -94,13 +94,35 @@ class BotConversationManager:
             
             return "SEND_SUPPORT", f"📞 For support or complaints, please contact the School Admin here: {admin_contact}"
 
-        # 4. GREETING / GENERIC (Default Fallback)
-        # "If text is generic... Reply: Welcome..."
-        logger.info(f"Analyzed intent for '{text}': Fallback to GREETING. (Matched nothing)")
-
+        # 4. AI-POWERED RESPONSE (Gemini)
+        # If strict keywords failed, ask the AI to handle it intelligently.
+        logger.info(f"Analyzed intent for '{text}': Fallback to AI. (Matched nothing explicit)")
+        
+        from services.llm.gemini_client import gemini_client
+        
+        # Prepare context for AI
+        students = context.get("students", [])
+        schools = context.get("schools", [])
+        
+        ai_context = {
+             "student_name": students[0].full_name if students else "Student",
+             "school_name": schools[0].school_name if schools else "School",
+             "amount_due": f"N{students[0].balance:,.2f}" if students else "Unknown",
+             "due_date": str(students[0].due_date) if students else "Unknown",
+             "days_overdue": students[0].days_until_due if students else 0
+        }
+        
+        # We re-use the generate_message method but slightly repurposed 
+        # (Ideally we'd have a specific 'chat' method, but this works for MVP)
+        ai_reply = gemini_client.generate_message(ai_context, tone="polite")
+        
+        if ai_reply:
+             return "AI_RESPONSE", ai_reply
+             
+        # 5. ULTIMATE FALLBACK (If AI fails or API key missing)
         response = (
             f"👋 Welcome, *{sender_name}*.\n\n"
-            "I am ready to verify your payments.\n\n"
+            "I use AI to help, but I didn't understand that.\n\n"
             "• *Upload a Receipt* to verify payment.\n"
             "• Type *'Status'* to check debt.\n"
             "• Type *'Pay'* for account details."
