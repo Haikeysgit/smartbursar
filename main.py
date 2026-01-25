@@ -95,6 +95,36 @@ def debug_students():
         db.close()
 
 
+@app.get("/debug/gemini")
+def debug_gemini():
+    """Test if Gemini API is working"""
+    import os
+    api_key = os.getenv("GOOGLE_API_KEY", "NOT SET")
+    key_preview = api_key[:15] + "..." if len(api_key) > 15 else api_key
+    
+    try:
+        from google import genai
+        from google.genai import types
+        
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=["Say 'Hello SmartBursar!' if you can hear me"],
+            config=types.GenerateContentConfig(response_mime_type="text/plain")
+        )
+        return {
+            "status": "SUCCESS",
+            "key_preview": key_preview,
+            "ai_response": response.text if response else "No response"
+        }
+    except Exception as e:
+        return {
+            "status": "FAILED",
+            "key_preview": key_preview,
+            "error": str(e)
+        }
+
+
 # =============================================================================
 # Admin Endpoints (Moved from webhook_handler.py)
 # =============================================================================
