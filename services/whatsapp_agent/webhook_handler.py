@@ -240,9 +240,9 @@ async def handle_text_message(sender: str, text: str, context: dict, sender_name
     # Use the SAFETY WRAPPER to catch crashes
     action, reply = conversation_manager.safe_analyze_intent(
         text=text,
-        sender_phone=sender,
+        sender=sender,  # Fixed: Match method signature (was sender_phone)
         context=context,
-        sender_name=sender_name
+        name=sender_name # Fixed: Match method signature (was sender_name)
     )
     if reply:
         whatsapp_client.send_text(sender, reply)
