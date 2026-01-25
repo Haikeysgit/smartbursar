@@ -75,6 +75,10 @@ class BotConversationManager:
                 paid = float(student.get("amount_paid", 0))
                 balance = due - paid
                 
+                # Add to total debt if they owe
+                if balance > 0:
+                    total_debt += balance
+                
                 status_emoji = "✅" if balance <= 0 else "🔴" 
                 
                 response += (
