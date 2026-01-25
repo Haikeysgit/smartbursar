@@ -33,7 +33,7 @@ load_dotenv()
 from .whatsapp_client import whatsapp_client
 from .verification_pipeline import verification_pipeline
 from .conversation_manager import conversation_manager
-from config.database import get_db_context
+from config.database import get_db_context, init_db
 from models.student import Student
 from models.school import School
 
@@ -50,8 +50,20 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="SmartBursar WhatsApp Agent",
     description="WhatsApp AI Payment Agent for School Fee Verification",
-    version="2.0.0" # Bumped for Intent-Based Architecture
+    version="2.0.1" # Bumped for Critical Fixes
 )
+
+# Startup Event: Ensure DB Tables Exist
+@app.on_event("startup")
+def startup_event():
+    """Ensure database tables are created on startup."""
+    try:
+        logger.info("Checking database schema...")
+        init_db()
+        logger.info("Database schema check complete.")
+    except Exception as e:
+        logger.critical(f"Failed to initialize database: {e}")
+        # We don't exit here to allow health checks to pass if DB recovers
 
 # Add rate limiter to app state and error handler
 app.state.limiter = limiter
@@ -215,6 +227,12 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
         entry = body_json.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value = changes.get("value", {})
+        
+        # FIX 1: Safety Check for Status Updates (e.g., read, delivered)
+        # If 'messages' is not present in value, ignore it.
+        if "messages" not in value:
+             return {"status": "ignored"}
+             
         messages = value.get("messages", [])
         
         if not messages:
