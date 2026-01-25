@@ -151,9 +151,9 @@ def drop_all_tables():
     """DROP ALL TABLES. Use only for testing!"""
     db_url = get_connection_string()
     if "postgres" in db_url and "localhost" not in db_url and "127.0.0.1" not in db_url:
-         # Simple safety check against dropping production DB
-         # Better to check ENVIRONMENT var, but this is a heuristic
-         pass
+         # Safety check against dropping production DB
+         logger.critical("ATTEMPTED TO DROP PRODUCTION TABLES. OPERATION BLOCKED.")
+         raise RuntimeError("Cannot drop tables in production environment!")
 
     from models.base import Base
     Base.metadata.drop_all(bind=engine)
