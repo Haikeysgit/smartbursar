@@ -225,7 +225,8 @@ def admin_seed_data():
             bank_name="Zenith Bank",
             account_number="1234567890",
             account_name="Excel College Tuition",
-            country_code="NG"
+            country_code="NG",
+            subscription_end_date=date(2030, 1, 1) # Fixed: Required field
         )
         db.add(school)
         db.flush() 
