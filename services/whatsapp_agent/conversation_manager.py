@@ -100,13 +100,35 @@ class BotConversationManager:
             
             return "SEND_SUPPORT", f"📞 For support or complaints, please contact the School Admin here: {admin_contact}"
 
-        # 4. AI-POWERED RESPONSE (Gemini) - TEMPORARILY DISABLED
-        # logger.info(f"Analyzed intent for '{text}': Fallback to AI.")
-        # from services.llm.gemini_client import gemini_client
-        # ... (AI Code commented out for stability) ...
+        # 4. AI-POWERED RESPONSE (Gemini)
+        # If strict keywords failed, ask the AI to handle it intelligently.
+        logger.info(f"Analyzed intent for '{text}': Fallback to AI. (Matched nothing explicit)")
+        
+        from services.llm.gemini_client import gemini_client
+        
+        # Prepare context for AI
+        students = context.get("students", [])
+        schools = context.get("schools", [])
+        
+        # Safe Data Access (using dicts)
+        student_data = students[0] if students else {}
+        school_data = schools[0] if schools else {}
+        
+        ai_context = {
+             "student_name": student_data.get("full_name", "Student"),
+             "school_name": school_data.school_name if hasattr(school_data, 'school_name') else "School", 
+             "amount_due": f"N{student_data.get('balance', 0):,.2f}",
+             "due_date": str(student_data.get("due_date", "Unknown")),
+             "days_overdue": student_data.get("days_until_due", 0)
+        }
+        
+        # Generate AI Reply
+        ai_reply = gemini_client.generate_message(ai_context, tone="polite")
+        
+        if ai_reply:
+             return "AI_RESPONSE", ai_reply
              
-        # 5. STATIC FALLBACK (Reliable)
-        logger.info(f"Analyzed intent for '{text}': Fallback to GREETING.")
+        # 5. ULTIMATE FALLBACK (If AI fails)
         response = (
             f"👋 Welcome, *{sender_name}*.\n\n"
             "• *Upload a Receipt* to verify payment.\n"
