@@ -1,16 +1,8 @@
 """
 =============================================================================
-SmartBursar - WhatsApp Webhook Handler
+SmartBursar - WhatsApp Webhook Handler (Router)
 =============================================================================
 FastAPI endpoints for Meta WhatsApp Cloud API webhooks.
-
-Endpoints:
-- GET /webhook: Meta verification handshake
-- POST /webhook: Incoming message handler
-- POST /admin/trigger-test: God Mode for testing
-
-To run:
-    uvicorn services.whatsapp_agent.webhook_handler:app --port 8000 --reload
 """
 
 import os
@@ -20,161 +12,34 @@ import hashlib
 from typing import Optional, Dict, Any
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Query, HTTPException, BackgroundTasks
-from fastapi.responses import PlainTextResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import APIRouter, Request, Query, HTTPException, BackgroundTasks
+from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
 
 from .whatsapp_client import whatsapp_client
 from .verification_pipeline import verification_pipeline
 from .conversation_manager import conversation_manager
-from config.database import get_db_context, init_db, SessionLocal, SessionLocal
+from config.database import get_db_context
 from models.student import Student
 from models.school import School
-from datetime import date
-from datetime import date
-import logging # Added explicit logging import just in case
 
-# ... (Previous imports remain same)
+logger = logging.getLogger(__name__)
 
-# ... (Existing code)
+# Security: Get app secret for webhook signature verification
+WHATSAPP_APP_SECRET = os.getenv("WHATSAPP_APP_SECRET", "")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
-# =============================================================================
-# Admin "GOD MODE" (For Testing)
-# =============================================================================
-
-@app.post("/admin/trigger-test")
-async def admin_trigger_test(
-    phone: str = Query(..., description="Target phone number"),
-    tone: str = Query(..., description="Tone type (term_start, exam_week)")
-):
-    """
-    Step 5: ADMIN 'GOD MODE'
-    Force a specific reminder tone to a specific number.
-    """
-    # This is a placeholder for the actual tone logic which would be in a notification service
-    # For now, we simulate the effect by sending a message
-    
-    message = f"[TEST MODE] Triggering '{tone}' reminder for {phone}"
-    
-    if tone == "term_start":
-        msg_content = "📢 *Term Start Reminder*\nWelcome back! Please ensure 50% fees are paid before resumption."
-    elif tone == "exam_week":
-        msg_content = "🎓 *Exam Week Alert*\nExams start Monday. Please clear all outstanding dues to obtain exam pass."
-    else:
-        msg_content = f"🔔 Test Reminder: {tone}"
-        
-    whatsapp_client.send_text(phone, msg_content)
-    
-    return {"status": "success", "message": message}
-
-
-@app.get("/admin/fix-my-data")
-def fix_my_data():
-    """Manual fix to seed admin data in production."""
-    # Force insert the Admin Parent
-    db = SessionLocal()
-    try:
-        # Ensure School exists (Dummy data if needed)
-        school = db.query(School).get(1)
-        if not school:
-            school = School(
-                id=1,
-                school_code="SCH001",
-                school_name="Admin Test School",
-                address="123 Test St",
-                phone="+2348000000000",
-                country_code="NG",
-                bank_name="Test Bank",
-                account_number="1234567890",
-                account_name="Test School Account",
-                subscription_end_date=date(2030, 1, 1)
-            )
-            db.add(school)
-            db.commit()
-
-        # Check if student exists first
-        existing = db.query(Student).filter(Student.parent_phone_primary == "+2348038004334").first()
-        if not existing:
-            new_student = Student(
-                full_name="Test Student",
-                parent_name="Obaseki Imisioluwa",
-                parent_phone_primary="+2348038004334",
-                school_id=1,  # Ensure School 1 exists too!
-                fees_total_due=50000,
-                amount_paid=0
-            )
-            db.add(new_student)
-            db.commit()
-            return "✅ SUCCESS: You are now registered. Go say 'Hello' to the bot."
-        return "⚠️ You were already registered."
-    except Exception as e:
-        return f"Error: {str(e)}"
-    finally:
-        db.close()
-
-
-# Rate limiting setup
+# Initialize Router
+router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
-# FastAPI app
-app = FastAPI(
-    title="SmartBursar WhatsApp Agent",
-    description="WhatsApp AI Payment Agent for School Fee Verification",
-    version="2.0.1" # Bumped for Critical Fixes
-)
-
-# Startup Event: Ensure DB Tables Exist
-@app.on_event("startup")
-def startup_event():
-    """Ensure database tables are created on startup."""
-    try:
-        logger.info("Checking database schema...")
-        init_db()
-        logger.info("Database schema check complete.")
-    except Exception as e:
-        logger.critical(f"Failed to initialize database: {e}")
-        # We don't exit here to allow health checks to pass if DB recovers
-
-# Add rate limiter to app state and error handler
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-# =============================================================================
-# Health Check (CRITICAL FOR RAILWAY)
-# =============================================================================
-@app.get("/health")
-async def health_check():
-    """Simple health check for Railway deployment."""
-    return {"status": "healthy", "service": "whatsapp-webhook"}
-
-
-# =============================================================================
-# Security Headers Middleware
-# =============================================================================
-
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    """Add security headers to all responses."""
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
-    return response
-
-
-# Mount receipts folder for static serving (development only)
+# Settings (Reciepts dir is now mounted in main.py, but we need the path here for logic)
 RECEIPTS_DIR = Path(__file__).parent.parent.parent / "receipts"
 RECEIPTS_DIR.mkdir(exist_ok=True)
-app.mount("/receipts", StaticFiles(directory=str(RECEIPTS_DIR)), name="receipts")
 
 
 # =============================================================================
@@ -208,27 +73,13 @@ def verify_webhook_signature(payload: bytes, signature: str) -> bool:
 def get_user_context(phone_number: str) -> Dict[str, Any]:
     """
     Step 1: IDENTITY & CONTEXT (The Gatekeeper)
-    
-    Check if phone matches any known parent (Student.parent_phone_primary).
-    If yes, return user type and context.
-    
-    Returns:
-        {
-            "user_type": "EXISTING_PARENT" | "NEW_USER" | "ADMIN",
-            "students": [list of student objects],
-            "schools": [list of school objects]
-        }
     """
     formatted_phone = f"+{phone_number}" if not phone_number.startswith("+") else phone_number
     
-    # 1. Check if Admin (for verification flow)
-    # This is a simplification. In real app, we check against User table or config.
-    # For now, we rely on verification_pipeline's internal state for admin replies.
     if formatted_phone in verification_pipeline.admin_pending:
         return {"user_type": "ADMIN", "students": [], "schools": []}
 
     with get_db_context() as db:
-        # 2. Search for students linked to this parent
         students = db.query(Student).filter(
             (Student.parent_phone_primary == formatted_phone) | 
             (Student.parent_phone_secondary == formatted_phone)
@@ -237,8 +88,6 @@ def get_user_context(phone_number: str) -> Dict[str, Any]:
         if not students:
             return {"user_type": "NEW_USER", "students": [], "schools": []}
         
-        # 3. Load associated schools
-        # Use a dictionary to deduplicate schools by ID
         school_map = {}
         for student in students:
             if student.school_id not in school_map:
@@ -257,7 +106,7 @@ def get_user_context(phone_number: str) -> Dict[str, Any]:
 # Webhook Verification (GET - Meta Handshake)
 # =============================================================================
 
-@app.get("/webhook")
+@router.get("/webhook")
 @limiter.limit("60/minute")
 async def verify_webhook(request: Request,
     hub_mode: Optional[str] = Query(None, alias="hub.mode"),
@@ -280,14 +129,13 @@ async def verify_webhook(request: Request,
 # Incoming Messages (POST - Message Handler - THE ROUTER)
 # =============================================================================
 
-@app.post("/webhook")
+@router.post("/webhook")
 @limiter.limit("60/minute")
 async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Handle incoming WhatsApp messages.
     Implements Identity Gatekeeper -> Intent Router -> Action.
     """
-    # SECURITY: Verify webhook signature first
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256", "")
     
@@ -299,41 +147,32 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
         import json
         body_json = json.loads(body)
         
-        # Extract message data
         entry = body_json.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value = changes.get("value", {})
         
-        # FIX 1: Safety Check for Status Updates (e.g., read, delivered)
-        # If 'messages' is not present in value, ignore it.
+        # FIX: Safety Check for Status Updates
         if "messages" not in value:
              return {"status": "ignored"}
              
         messages = value.get("messages", [])
         
         if not messages:
-            return {"status": "ok"} # Ack status updates
+            return {"status": "ok"}
         
         message = messages[0]
         sender = message.get("from")
         message_type = message.get("type")
         
-        # Get contact info (Meta provided name)
         contacts = value.get("contacts", [{}])
         sender_profile_name = contacts[0].get("profile", {}).get("name", "Unknown")
         
         logger.info(f"Incoming message from {sender} ({sender_profile_name}): type={message_type}")
         
-        # ---------------------------------------------------------------------
-        # Step 1: IDENTITY & CONTEXT (The Gatekeeper)
-        # ---------------------------------------------------------------------
         context = get_user_context(sender)
         user_type = context["user_type"]
         
-        # NEW USER BLOCK
         if user_type == "NEW_USER":
-            # Check if this is a "whitelist" bypass (e.g. for testing) or strictly block
-            # For this requirement: "If New User: Reply... (STOP)"
             background_tasks.add_task(
                 whatsapp_client.send_text,
                 sender,
@@ -341,8 +180,6 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
             )
             return {"status": "ok"}
             
-        # EXISTING PARENT or ADMIN
-        # Route to handler
         background_tasks.add_task(
             route_message,
             sender=sender,
@@ -359,67 +196,47 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
 
 
 async def route_message(sender: str, message: dict, context: dict, sender_profile_name: str):
-    """
-    Step 2: INTENT DETECTION (The Router)
-    """
+    """Step 2: INTENT DETECTION"""
     message_type = message.get("type")
     
-    # --- ADMIN OVERRIDE ---
     if context["user_type"] == "ADMIN":
         text = message.get("text", {}).get("body", "") if message_type == "text" else ""
         if text:
-            # Pass to verification pipeline for admin reply processing
              verification_pipeline.process_admin_reply(
                 admin_phone=f"+{sender}" if not sender.startswith("+") else sender,
                 reply_text=text
             )
              return
 
-    # --- PARENT ROUTING ---
-    
-    # Type A: Media/Image (Receipts)
     if message_type in ("image", "document"):
         media = message.get(message_type, {})
         await handle_media_message(sender, media, message_type, context)
         return
 
-    # Type B: Text (Conversation)
     if message_type == "text":
         text = message.get("text", {}).get("body", "")
         await handle_text_message(sender, text, context, sender_profile_name)
         return
         
-    # Unsupported type
     whatsapp_client.send_text(sender, "⚠️ I can only process text messages and receipt images/PDFs.")
 
 
 async def handle_text_message(sender: str, text: str, context: dict, sender_name: str):
-    """
-    Handle text messages using Intent Detection.
-    """
-    # Use Conversation Manager to analyze intent
-    # We pass the full context (Students/Schools) to Generate specific replies
-    
     action, reply = conversation_manager.analyze_intent(
         text=text,
         sender_phone=sender,
         context=context,
         sender_name=sender_name
     )
-    
     if reply:
         whatsapp_client.send_text(sender, reply)
 
 
 async def handle_media_message(sender: str, media: dict, media_type: str, context: dict):
-    """
-    Handle receipt uploads.
-    """
     media_id = media.get("id")
     if not media_id:
         return
         
-    # Download logic
     mime_type = media.get("mime_type", "")
     ext_map = {
         "image/jpeg": ".jpg", "image/png": ".png", "image/heic": ".heic",
@@ -439,22 +256,12 @@ async def handle_media_message(sender: str, media: dict, media_type: str, contex
     with open(file_path, "rb") as f:
         file_content = f.read()
 
-    # Determine School (Multi-School Case)
-    # If parent has 1 school, use it. If multiple, we might need to ask or use AI to match.
-    # For now, default to the first school in context (or refine logic later)
-    # The Requirement says: "Load contexts for ALL...".
-    # But process_parent_receipt takes one school_id.
-    # We will pass the PRIMARY school (first one) or handle logic inside pipeline.
-    # Better yet: Pass specific school if we can infer it, otherwise first.
-    
     if not context["schools"]:
         whatsapp_client.send_text(sender, "⚠️ Error: No school linked to your profile.")
         return
 
-    # Default to first school
     target_school = context["schools"][0]
     
-    # Process
     verification_pipeline.process_parent_receipt(
         parent_phone=f"+{sender}" if not sender.startswith("+") else sender,
         file_content=file_content,
@@ -462,48 +269,5 @@ async def handle_media_message(sender: str, media: dict, media_type: str, contex
         school_id=target_school.id
     )
 
-
-# =============================================================================
-# Admin "GOD MODE" (For Testing)
-# =============================================================================
-
-@app.post("/admin/trigger-test")
-async def admin_trigger_test(
-    phone: str = Query(..., description="Target phone number"),
-    tone: str = Query(..., description="Tone type (term_start, exam_week)")
-):
-    """
-    Step 5: ADMIN 'GOD MODE'
-    Force a specific reminder tone to a specific number.
-    """
-    # This is a placeholder for the actual tone logic which would be in a notification service
-    # For now, we simulate the effect by sending a message
-    
-    message = f"[TEST MODE] Triggering '{tone}' reminder for {phone}"
-    
-    if tone == "term_start":
-        msg_content = "📢 *Term Start Reminder*\nWelcome back! Please ensure 50% fees are paid before resumption."
-    elif tone == "exam_week":
-        msg_content = "🎓 *Exam Week Alert*\nExams start Monday. Please clear all outstanding dues to obtain exam pass."
-    else:
-        msg_content = f"🔔 Test Reminder: {tone}"
-        
-    whatsapp_client.send_text(phone, msg_content)
-    
-    return {"status": "success", "message": message}
-
-# =============================================================================
-# Privacy & Terms (Meta)
-# =============================================================================
-
-@app.get("/privacy")
-async def privacy_policy():
-    """Privacy Policy page."""
-    from fastapi.responses import HTMLResponse
-    return HTMLResponse(content="<html><body><h1>Privacy Policy</h1><p>Data stored securely.</p></body></html>")
-
-@app.get("/terms")
-async def terms_of_service():
-    """Terms of Service page."""
-    from fastapi.responses import HTMLResponse
-    return HTMLResponse(content="<html><body><h1>Terms of Service</h1><p>Use responsibly.</p></body></html>")
+# Endpoints for admin tests moved to main.py
+# Privacy/Terms moved to main.py (or could stay here, but better in main if global)

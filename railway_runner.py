@@ -16,7 +16,7 @@ def run_services():
     # The webhook API runs on the main PORT (Railway routes to this)
     api_process = subprocess.Popen([
         sys.executable, "-m", "uvicorn",
-        "services.whatsapp_agent.webhook_handler:app",
+        "main:app",
         "--host", "0.0.0.0",
         "--port", str(port)
     ])
@@ -51,7 +51,7 @@ def run_services():
             print("API process exited, restarting...")
             api_process = subprocess.Popen([
                 sys.executable, "-m", "uvicorn",
-                "services.whatsapp_agent.webhook_handler:app",
+                "main:app",
                 "--host", "0.0.0.0",
                 "--port", str(port)
             ])
