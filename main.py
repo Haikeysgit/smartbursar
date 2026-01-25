@@ -232,11 +232,11 @@ def admin_seed_data():
         db.flush() 
         
         # Create Student
-        # HARDCODED to the number user provided in screenshot: 2349163031534
+        # USER'S ACTUAL WHATSAPP NUMBER (from error logs)
         student = Student(
             full_name="David Adeleke",
             parent_name="Chief Adeleke",
-            parent_phone_primary="+2349163031534", 
+            parent_phone_primary="+2348038004334", 
             class_level="SS 3",
             fees_total_due=150000.00,
             amount_paid=50000.00, 
