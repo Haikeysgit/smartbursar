@@ -33,115 +33,60 @@ class BotConversationManager:
              return "DEBUG_PAUL", "I heard 'Paul'. Use 'Status' to check debt or 'Pay' for account details."
         
         # 1. WANT TO PAY
-        if any(word in text_lower for word in ["pay", "transfer", "account", "bank", "send money"]):
-            # Get school bank details from context
-            schools = context.get("schools", [])
-            if not schools:
-                 return "ERROR", "I cannot find school bank details for your profile. Please contact Admin."
-            
-            # If multi-school, we should technically ask which one. 
-            # For this MVP, we list ALL linked schools' accounts.
-            
-            response = "🏦 *School Account Details*\n\n"
-            for school in schools:
-                # Handle dict access (schools are now serialized dicts)
-                response += (
-                    f"🏫 *{school.get('school_name', 'School')}*\n"
-                    f"Bank: {school.get('bank_name', 'Unknown')}\n"
-                    f"Account: {school.get('account_number', 'Unknown')}\n"
-                    f"Name: {school.get('account_name', 'Unknown')}\n\n"
-                )
-            
-            response += "Please make a transfer and *send me the receipt* (Image/PDF) here to verify."
-            return "SEND_BANK_DETAILS", response
-
-        # 2. STATUS CHECK
-        if any(word in text_lower for word in ["status", "balance", "owe", "debt", "owing"]):
-            students = context.get("students", [])
-            if not students:
-                 return "ERROR", "I cannot find any students linked to your number."
-            
-            response = "📊 *Fee Status Report*\n\n"
-            total_debt = 0
-            
-            for student in students:
-                # Handle Dictionary Access (Safe serialization from webhook)
-                # student is now a dict, not an ORM object
-                full_name = student.get("full_name", "Student")
-                class_level = student.get("class_level", "")
-                payment_status = student.get("payment_status", "UNKNOWN")
-                
-                due = float(student.get("fees_total_due", 0))
-                paid = float(student.get("amount_paid", 0))
-                balance = due - paid
-                
-                # Add to total debt if they owe
-                if balance > 0:
-                    total_debt += balance
-                
-                status_emoji = "✅" if balance <= 0 else "🔴" 
-                
-                response += (
-                    f"👤 *{full_name}* ({class_level})\n"
-                    f"Status: {status_emoji} {payment_status}\n"
-                    f"Outstanding: ₦{balance:,.2f}\n\n"
-                )
-            
-            if total_debt > 0:
-                response += f"💰 *Total to Pay: ₦{total_debt:,.2f}*\nType 'Pay' to get account details."
-            else:
-                response += "🎉 You are fully paid up! Thank you."
-                
-            return "SEND_STATUS", response
-
-        # 3. COMPLAINT / SUPPORT
-        if any(word in text_lower for word in ["help", "support", "complaint", "error", "issue", "fake"]):
-            # Provide admin contact
-            schools = context.get("schools", [])
-            admin_contact = "the school office"
-            if schools:
-                # Use first school's phone (handle dict access)
-                school_phone = schools[0].get("phone", "+2348000000000")
-                admin_contact = f"https://wa.me/{school_phone.replace('+', '')}"
-            
-            return "SEND_SUPPORT", f"📞 For support or complaints, please contact the School Admin here: {admin_contact}"
-
-        # 4. AI-POWERED RESPONSE (Gemini)
-        # If strict keywords failed, ask the AI to handle it intelligently.
-        logger.info(f"Analyzed intent for '{text}': Fallback to AI. (Matched nothing explicit)")
+        # =================================================================
+        # FULL AI MODE: Let Gemini handle ALL conversations naturally
+        # =================================================================
+        logger.info(f"Routing '{text}' to AI for natural language processing")
         
         from services.llm.gemini_client import gemini_client
         
-        # Prepare context for AI
+        # Prepare rich context for AI
         students = context.get("students", [])
         schools = context.get("schools", [])
         
-        # Safe Data Access (using dicts)
         student_data = students[0] if students else {}
         school_data = schools[0] if schools else {}
         
+        # Build detailed context
         ai_context = {
-             "student_name": student_data.get("full_name", "Student"),
-             "school_name": school_data.get("school_name", "School"), 
-             "amount_due": f"N{student_data.get('balance', 0):,.2f}",
-             "due_date": str(student_data.get("due_date", "Unknown")),
-             "days_overdue": student_data.get("days_until_due", 0)
+            "student_name": student_data.get("full_name", "Student"),
+            "class_level": student_data.get("class_level", ""),
+            "school_name": school_data.get("school_name", "School"),
+            "amount_due": f"N{student_data.get('balance', 0):,.2f}",
+            "fees_total": f"N{student_data.get('fees_total_due', 0):,.2f}",
+            "amount_paid": f"N{student_data.get('amount_paid', 0):,.2f}",
+            "payment_status": student_data.get("payment_status", "UNKNOWN"),
+            "due_date": str(student_data.get("due_date", "Unknown")),
+            "days_until_due": student_data.get("days_until_due", 0),
+            "bank_name": school_data.get("bank_name", "Unknown"),
+            "account_number": school_data.get("account_number", "Unknown"),
+            "account_name": school_data.get("account_name", "Unknown")
         }
         
-        # Generate AI Reply
-        ai_reply = gemini_client.generate_message(ai_context, tone="polite")
+        # Add instruction to AI based on intent hints
+        system_instruction = f"""You are a school fee payment assistant for {school_data.get('school_name', 'the school')}.
+The parent just said: "{text}"
+
+Student Info: {student_data.get('full_name', 'Student')} ({student_data.get('class_level', '')})
+Payment Status: {student_data.get('payment_status', 'UNKNOWN')}
+Outstanding Balance: N{student_data.get('balance', 0):,.2f}
+
+If they ask about:
+- FEES/STATUS/BALANCE: Tell them the status clearly
+- PAYMENT/BANK/ACCOUNT: Give them the bank details
+- COMPLAINTS/HELP: Direct them to school admin
+- GREETING: Welcome them warmly
+
+Respond naturally and helpfully. Keep it concise (2-3 sentences max)."""
+        
+        # Generate AI response with enhanced prompt
+        ai_reply = gemini_client.generate_message(ai_context, tone="helpful", custom_prompt=system_instruction)
         
         if ai_reply:
-             return "AI_RESPONSE", ai_reply
-             
-        # 5. ULTIMATE FALLBACK (If AI fails)
-        response = (
-            f"👋 Welcome, *{sender_name}*.\n\n"
-            "• *Upload a Receipt* to verify payment.\n"
-            "• Type *'Status'* to check debt.\n"
-            "• Type *'Pay'* for account details."
-        )
-        return "SEND_GREETING", response
+            return "AI_RESPONSE", ai_reply
+        
+        # Ultimate fallback if AI completely fails
+        return "SEND_GREETING", f"👋 Hi {sender_name}, I'm having trouble with my AI. Please try again or contact the school admin."
 
     def safe_analyze_intent(self, text, sender, context, name):
         """Wrapper to prevent silence on crash."""

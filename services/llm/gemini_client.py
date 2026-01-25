@@ -47,7 +47,7 @@ class GeminiClient:
             
             # Generate content
             response = self.client.models.generate_content(
-                model="gemini-1.5-flash", # Stable model
+                model="gemini-1.5-flash", 
                 contents=[prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="text/plain"
