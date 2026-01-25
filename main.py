@@ -73,6 +73,28 @@ def home():
     return {"message": "SmartBursar API is running. WhatsApp Webhook at /webhook"}
 
 
+@app.get("/debug/students")
+def debug_students():
+    """Debug endpoint to see what's in the database"""
+    db = SessionLocal()
+    try:
+        students = db.query(Student).all()
+        return {
+            "count": len(students),
+            "students": [
+                {
+                    "name": s.full_name,
+                    "phone_primary": s.parent_phone_primary,
+                    "phone_secondary": s.parent_phone_secondary,
+                    "school_id": s.school_id
+                }
+                for s in students
+            ]
+        }
+    finally:
+        db.close()
+
+
 # =============================================================================
 # Admin Endpoints (Moved from webhook_handler.py)
 # =============================================================================
