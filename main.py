@@ -130,6 +130,8 @@ def fix_my_data():
                 full_name="Test Student",
                 parent_name="Obaseki Imisioluwa",
                 parent_phone_primary="+2348038004334",
+                class_level="JSS 1",
+                due_date=date(2026, 12, 31),
                 school_id=1,
                 fees_total_due=50000,
                 amount_paid=0
