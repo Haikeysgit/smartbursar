@@ -35,7 +35,7 @@ class GeminiClient:
         else:
             logger.warning("GOOGLE_API_KEY not found. AI features disabled.")
 
-    def generate_message(self, context: Dict[str, Any], tone: str = "polite") -> Optional[str]:
+    def generate_message(self, context: Dict[str, Any], tone: str = "polite", custom_prompt: str = None) -> Optional[str]:
         """
         Generate a payment reminder message using Gemini.
         """
@@ -43,7 +43,12 @@ class GeminiClient:
             return None
 
         try:
-            prompt = self._build_prompt(context, tone)
+            # Use custom prompt if provided (for full AI mode)
+            if custom_prompt:
+                prompt = custom_prompt
+            else:
+                # Use template-based prompt (legacy mode)
+                prompt = self._build_prompt(context, tone)
             
             # Generate content
             response = self.client.models.generate_content(
