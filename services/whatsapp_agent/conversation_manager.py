@@ -64,11 +64,12 @@ class BotConversationManager:
             total_debt = 0
             
             for student in students:
-                balance = student.fees_total_due - student.amount_paid
-                status_emoji = "✅" if balance <= 0 else "exclamation" # "❗" can sometimes break old whatsapp, using standard
-                if balance > 0:
-                     status_emoji = "🔴"
-                     total_debt += balance
+                # SAFE GUARD: Handle None values in database
+                due = float(student.fees_total_due or 0)
+                paid = float(student.amount_paid or 0)
+                balance = due - paid
+                
+                status_emoji = "✅" if balance <= 0 else "🔴" 
                 
                 response += (
                     f"👤 *{student.full_name}* ({student.class_level})\n"
