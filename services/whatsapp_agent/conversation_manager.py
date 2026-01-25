@@ -64,16 +64,21 @@ class BotConversationManager:
             total_debt = 0
             
             for student in students:
-                # SAFE GUARD: Handle None values in database
-                due = float(student.fees_total_due or 0)
-                paid = float(student.amount_paid or 0)
+                # Handle Dictionary Access (Safe serialization from webhook)
+                # student is now a dict, not an ORM object
+                full_name = student.get("full_name", "Student")
+                class_level = student.get("class_level", "")
+                payment_status = student.get("payment_status", "UNKNOWN")
+                
+                due = float(student.get("fees_total_due", 0))
+                paid = float(student.get("amount_paid", 0))
                 balance = due - paid
                 
                 status_emoji = "✅" if balance <= 0 else "🔴" 
                 
                 response += (
-                    f"👤 *{student.full_name}* ({student.class_level})\n"
-                    f"Status: {status_emoji} {student.payment_status}\n"
+                    f"👤 *{full_name}* ({class_level})\n"
+                    f"Status: {status_emoji} {payment_status}\n"
                     f"Outstanding: ₦{balance:,.2f}\n\n"
                 )
             

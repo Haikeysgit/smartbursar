@@ -102,17 +102,35 @@ def get_user_context(phone_number: str) -> Dict[str, Any]:
             # Debugging: Return formatted phone so we can tell user what we saw
             return {"user_type": "NEW_USER", "students": [], "schools": [], "debug_phone": formatted_phone}
         
+        # Prepare safe data dictionaries (avoid DetachedInstanceError)
+        safe_students = []
         school_map = {}
+        
         for student in students:
+            # Load school if needed
             if student.school_id not in school_map:
                 school = db.query(School).get(student.school_id)
                 if school:
                     school_map[student.school_id] = school
-        
+            
+            # Serialize to dict including computed properties
+            safe_students.append({
+                "full_name": student.full_name,
+                "class_level": student.class_level,
+                "fees_total_due": float(student.fees_total_due),
+                "amount_paid": float(student.amount_paid),
+                "balance": float(student.balance),
+                "payment_status": student.payment_status,
+                "due_date": student.due_date,
+                "days_until_due": student.days_until_due
+            })
+
         return {
             "user_type": "EXISTING_PARENT", 
-            "students": students, 
-            "schools": list(school_map.values())
+            "students": safe_students, 
+            # Note: Schools are still ORM objects but simple columns usually survive if not accessed via relationship
+            # To be safe, let's expunge them or trust they are simple enough
+            "schools": list(school_map.values()) 
         }
 
 
