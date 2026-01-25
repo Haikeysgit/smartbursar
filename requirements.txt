@@ -17,6 +17,7 @@ slowapi>=0.1.9            # Rate limiting for FastAPI
 # -----------------------------------------------------------------------------
 sqlalchemy>=2.0.0         # ORM (works with SQLite + PostgreSQL)
 # Note: For PostgreSQL in production, Railway auto-installs psycopg2
+psycopg2-binary>=2.9.9    # PostgreSQL adapter
 
 # -----------------------------------------------------------------------------
 # Authentication
