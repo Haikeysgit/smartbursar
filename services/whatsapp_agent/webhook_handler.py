@@ -237,7 +237,8 @@ async def route_message(sender: str, message: dict, context: dict, sender_profil
 
 
 async def handle_text_message(sender: str, text: str, context: dict, sender_name: str):
-    action, reply = conversation_manager.analyze_intent(
+    # Use the SAFETY WRAPPER to catch crashes
+    action, reply = conversation_manager.safe_analyze_intent(
         text=text,
         sender_phone=sender,
         context=context,
