@@ -9,21 +9,64 @@ import time
 import signal
 
 def run_services():
-    """Run both the webhook API and Streamlit dashboard."""
+    """
+    Run services based on environment and configuration.
     
+    Modes:
+    1. Local Development (default if no specific env vars): Runs BOTH API and Dashboard.
+    2. Production API: Runs users `SERVICE_TYPE=api` (or default).
+    3. Production Dashboard: Runs when `SERVICE_TYPE=dashboard`.
+    """
     port = int(os.environ.get("PORT", 8000))
+    service_type = os.environ.get("SERVICE_TYPE", "api").lower()
+    environment = os.environ.get("ENVIRONMENT", "development")
     
-    # The webhook API runs on the main PORT (Railway routes to this)
+    # ---------------------------------------------------------
+    # MODE 1: PRODUCTION DASHBOARD
+    # ---------------------------------------------------------
+    if service_type == "dashboard":
+        print(f"🚀 Starting DASHBOARD on port {port}")
+        # Validates that we are in a production-like env or explicitly asked for dashboard
+        cmd = [
+            sys.executable, "-m", "streamlit", "run",
+            "dashboard/app.py",
+            "--server.port", str(port),
+            "--server.address", "0.0.0.0",
+            "--server.headless", "true"
+        ]
+        return subprocess.run(cmd).returncode
+
+    # ---------------------------------------------------------
+    # MODE 2: PRODUCTION API (Default)
+    # ---------------------------------------------------------
+    # If we are in production (Railway) and NOT dashboard, we run just the API
+    # We detect production by "RAILWAY_PUBLIC_DOMAIN" or similar, or just assumption if not local
+    is_railway = "RAILWAY_PUBLIC_DOMAIN" in os.environ or "RAILWAY_STATIC_URL" in os.environ
+    
+    if is_railway and service_type != "local":
+        print(f"🚀 Starting API on port {port}")
+        cmd = [
+            sys.executable, "-m", "uvicorn",
+            "main:app",
+            "--host", "0.0.0.0",
+            "--port", str(port)
+        ]
+        return subprocess.run(cmd).returncode
+
+    # ---------------------------------------------------------
+    # MODE 3: LOCAL DEVELOPMENT (Run BOTH)
+    # ---------------------------------------------------------
+    print("🛠️  Starting LOCAL DEVELOPMENT (API + Dashboard)")
+    
+    # API on Port 8000
     api_process = subprocess.Popen([
         sys.executable, "-m", "uvicorn",
         "main:app",
         "--host", "0.0.0.0",
-        "--port", str(port)
+        "--port", "8000"
     ])
     
-    # Streamlit dashboard runs on port 8501 (internal)
-    # Note: In production, you'd use a reverse proxy to expose both
-    # For now, only the API is publicly accessible, dashboard runs locally
+    # Dashboard on Port 8501
     dashboard_process = subprocess.Popen([
         sys.executable, "-m", "streamlit", "run",
         "dashboard/app.py",
@@ -33,7 +76,6 @@ def run_services():
     ])
     
     def signal_handler(signum, frame):
-        """Handle shutdown gracefully."""
         print("Shutting down services...")
         api_process.terminate()
         dashboard_process.terminate()
@@ -42,31 +84,15 @@ def run_services():
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
     
-    print(f"✅ Webhook API running on port {port}")
-    print(f"✅ Dashboard running on port 8501")
+    print(f"✅ Webhook API running on http://localhost:8000")
+    print(f"✅ Dashboard running on http://localhost:8501")
     
-    # Wait for either process to exit
-    while True:
-        if api_process.poll() is not None:
-            print("API process exited, restarting...")
-            api_process = subprocess.Popen([
-                sys.executable, "-m", "uvicorn",
-                "main:app",
-                "--host", "0.0.0.0",
-                "--port", str(port)
-            ])
-        
-        if dashboard_process.poll() is not None:
-            print("Dashboard process exited, restarting...")
-            dashboard_process = subprocess.Popen([
-                sys.executable, "-m", "streamlit", "run",
-                "dashboard/app.py",
-                "--server.port", "8501",
-                "--server.address", "0.0.0.0",
-                "--server.headless", "true"
-            ])
-        
-        time.sleep(5)
+    # Keep alive
+    api_process.wait()
+    dashboard_process.wait()
+
+if __name__ == "__main__":
+    run_services()
 
 
 if __name__ == "__main__":
