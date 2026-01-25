@@ -46,9 +46,10 @@ def get_connection_string():
     # 3. Local Default (BUT CRASH IF PRODUCTION)
     environment = os.getenv("ENVIRONMENT", "development")
     if environment.lower() in ("production", "prod", "staging"):
-         logger.critical("CRITICAL ERROR: Running in PRODUCTION but DATABASE_URL is not set!")
-         logger.critical("You must provision a PostgreSQL database in Railway and link it.")
-         raise ValueError("DATABASE_URL missing in Production Environment")
+         # WARN but do not crash yet - User is having trouble linking DB
+         logger.warning("WARNING: Running in PRODUCTION but DATABASE_URL is not set!")
+         logger.warning("Data will be lost on redeploy. Please link PostgreSQL soon.")
+         # return "sqlite:///./atlas.db" # Fallback allowed for now
 
     return "sqlite:///./atlas.db"
 
