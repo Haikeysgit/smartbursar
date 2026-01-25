@@ -19,16 +19,7 @@ class ReceiptExtractor:
     Gemini-powered receipt OCR engine (Updated for google-genai SDK).
     """
     
-    SYSTEM_PROMPT = """You are a precise financial OCR engine for Nigerian bank receipts.
-    Extract these fields into a pure JSON object:
-    {
-        "amount": <number>,
-        "date": "<DD-MM-YYYY>",
-        "bank_name": "<string>",
-        "sender_name": "<string>",
-        "transaction_ref": "<string>",
-        "error": false
-    }
+    SYSTEM_PROMPT = """Analyze this image. If it is a payment receipt, extract the following fields in JSON format: {'amount': float, 'beneficiary_name': string, 'date': string, 'sender_name': string}. If any field is invisible, return null. Do not hallucinate values.
     Rules:
     1. Ignore currency symbols. Return numbers only.
     2. If not a receipt, return {"error": true, "reason": "Not a valid receipt"}.

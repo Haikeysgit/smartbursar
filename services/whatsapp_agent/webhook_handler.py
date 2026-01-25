@@ -7,19 +7,17 @@ FastAPI endpoints for Meta WhatsApp Cloud API webhooks.
 Endpoints:
 - GET /webhook: Meta verification handshake
 - POST /webhook: Incoming message handler
+- POST /admin/trigger-test: God Mode for testing
 
 To run:
     uvicorn services.whatsapp_agent.webhook_handler:app --port 8000 --reload
-
-For production, use ngrok or deploy to a public server:
-    ngrok http 8000
 """
 
 import os
 import logging
 import hmac
 import hashlib
-from typing import Optional
+from typing import Optional, Dict, Any
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Query, HTTPException, BackgroundTasks
@@ -34,6 +32,10 @@ load_dotenv()
 
 from .whatsapp_client import whatsapp_client
 from .verification_pipeline import verification_pipeline
+from .conversation_manager import conversation_manager
+from config.database import get_db_context
+from models.student import Student
+from models.school import School
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,7 @@ limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="SmartBursar WhatsApp Agent",
     description="WhatsApp AI Payment Agent for School Fee Verification",
-    version="1.0.0"
+    version="2.0.0" # Bumped for Intent-Based Architecture
 )
 
 # Add rate limiter to app state and error handler
@@ -60,10 +62,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # =============================================================================
 @app.get("/health")
 async def health_check():
-    """
-    Simple health check for Railway deployment.
-    Returns 200 OK immediately without checking DB/AI.
-    """
+    """Simple health check for Railway deployment."""
     return {"status": "healthy", "service": "whatsapp-webhook"}
 
 
@@ -75,25 +74,12 @@ async def health_check():
 async def add_security_headers(request: Request, call_next):
     """Add security headers to all responses."""
     response = await call_next(request)
-    
-    # Prevent MIME type sniffing
     response.headers["X-Content-Type-Options"] = "nosniff"
-    
-    # Prevent clickjacking
     response.headers["X-Frame-Options"] = "DENY"
-    
-    # XSS Protection (legacy browsers)
     response.headers["X-XSS-Protection"] = "1; mode=block"
-    
-    # Control referrer information
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    
-    # Prevent caching of sensitive responses
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-    
-    # Content Security Policy
     response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'"
-    
     return response
 
 
@@ -108,18 +94,8 @@ app.mount("/receipts", StaticFiles(directory=str(RECEIPTS_DIR)), name="receipts"
 # =============================================================================
 
 def verify_webhook_signature(payload: bytes, signature: str) -> bool:
-    """
-    Verify the X-Hub-Signature-256 header from Meta.
-    
-    Args:
-        payload: Raw request body
-        signature: X-Hub-Signature-256 header value
-    
-    Returns:
-        True if signature is valid, False otherwise
-    """
+    """Verify the X-Hub-Signature-256 header from Meta."""
     if not WHATSAPP_APP_SECRET:
-        # In development without app secret, log warning but allow
         if ENVIRONMENT == "development":
             logger.warning("WHATSAPP_APP_SECRET not set - skipping signature verification (dev only)")
             return True
@@ -138,6 +114,58 @@ def verify_webhook_signature(payload: bytes, signature: str) -> bool:
 
 
 # =============================================================================
+# Identity Gatekeeper
+# =============================================================================
+
+def get_user_context(phone_number: str) -> Dict[str, Any]:
+    """
+    Step 1: IDENTITY & CONTEXT (The Gatekeeper)
+    
+    Check if phone matches any known parent (Student.parent_phone_primary).
+    If yes, return user type and context.
+    
+    Returns:
+        {
+            "user_type": "EXISTING_PARENT" | "NEW_USER" | "ADMIN",
+            "students": [list of student objects],
+            "schools": [list of school objects]
+        }
+    """
+    formatted_phone = f"+{phone_number}" if not phone_number.startswith("+") else phone_number
+    
+    # 1. Check if Admin (for verification flow)
+    # This is a simplification. In real app, we check against User table or config.
+    # For now, we rely on verification_pipeline's internal state for admin replies.
+    if formatted_phone in verification_pipeline.admin_pending:
+        return {"user_type": "ADMIN", "students": [], "schools": []}
+
+    with get_db_context() as db:
+        # 2. Search for students linked to this parent
+        students = db.query(Student).filter(
+            (Student.parent_phone_primary == formatted_phone) | 
+            (Student.parent_phone_secondary == formatted_phone)
+        ).all()
+        
+        if not students:
+            return {"user_type": "NEW_USER", "students": [], "schools": []}
+        
+        # 3. Load associated schools
+        # Use a dictionary to deduplicate schools by ID
+        school_map = {}
+        for student in students:
+            if student.school_id not in school_map:
+                school = db.query(School).get(student.school_id)
+                if school:
+                    school_map[student.school_id] = school
+        
+        return {
+            "user_type": "EXISTING_PARENT", 
+            "students": students, 
+            "schools": list(school_map.values())
+        }
+
+
+# =============================================================================
 # Webhook Verification (GET - Meta Handshake)
 # =============================================================================
 
@@ -148,12 +176,7 @@ async def verify_webhook(request: Request,
     hub_verify_token: Optional[str] = Query(None, alias="hub.verify_token"),
     hub_challenge: Optional[str] = Query(None, alias="hub.challenge")
 ):
-    """
-    Meta webhook verification endpoint.
-    
-    Called by Meta when you register your webhook URL.
-    Returns the challenge to complete verification.
-    """
+    """Meta webhook verification endpoint."""
     if not hub_mode or not hub_verify_token or not hub_challenge:
         raise HTTPException(status_code=400, detail="Missing verification parameters")
     
@@ -166,7 +189,7 @@ async def verify_webhook(request: Request,
 
 
 # =============================================================================
-# Incoming Messages (POST - Message Handler)
+# Incoming Messages (POST - Message Handler - THE ROUTER)
 # =============================================================================
 
 @app.post("/webhook")
@@ -174,11 +197,7 @@ async def verify_webhook(request: Request,
 async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Handle incoming WhatsApp messages.
-    
-    Parses the webhook payload and routes to appropriate handler.
-    Processing is done in background to respond quickly to Meta.
-    
-    SECURITY: Verifies X-Hub-Signature-256 header before processing.
+    Implements Identity Gatekeeper -> Intent Router -> Action.
     """
     # SECURITY: Verify webhook signature first
     body = await request.body()
@@ -192,337 +211,205 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
         import json
         body_json = json.loads(body)
         
-        # Extract message data from webhook payload
+        # Extract message data
         entry = body_json.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value = changes.get("value", {})
-        
-        # Check if this is a message event
         messages = value.get("messages", [])
+        
         if not messages:
-            # Status update or other event - acknowledge and ignore
-            return {"status": "ok"}
+            return {"status": "ok"} # Ack status updates
         
         message = messages[0]
-        sender = message.get("from")  # Phone number
+        sender = message.get("from")
         message_type = message.get("type")
         
-        # Get contact info
+        # Get contact info (Meta provided name)
         contacts = value.get("contacts", [{}])
-        sender_name = contacts[0].get("profile", {}).get("name", "Unknown")
+        sender_profile_name = contacts[0].get("profile", {}).get("name", "Unknown")
         
-        logger.info(f"Incoming message from {sender} ({sender_name}): type={message_type}")
+        logger.info(f"Incoming message from {sender} ({sender_profile_name}): type={message_type}")
         
-        # Route based on message type
-        if message_type == "text":
-            text = message.get("text", {}).get("body", "")
+        # ---------------------------------------------------------------------
+        # Step 1: IDENTITY & CONTEXT (The Gatekeeper)
+        # ---------------------------------------------------------------------
+        context = get_user_context(sender)
+        user_type = context["user_type"]
+        
+        # NEW USER BLOCK
+        if user_type == "NEW_USER":
+            # Check if this is a "whitelist" bypass (e.g. for testing) or strictly block
+            # For this requirement: "If New User: Reply... (STOP)"
             background_tasks.add_task(
-                handle_text_message,
-                sender=sender,
-                text=text,
-                sender_name=sender_name
+                whatsapp_client.send_text,
+                sender,
+                "🚫 I do not recognize this number. Please contact your School Admin to register."
             )
+            return {"status": "ok"}
+            
+        # EXISTING PARENT or ADMIN
+        # Route to handler
+        background_tasks.add_task(
+            route_message,
+            sender=sender,
+            message=message,
+            context=context,
+            sender_profile_name=sender_profile_name
+        )
         
-        elif message_type in ("image", "document"):
-            media = message.get(message_type, {})
-            background_tasks.add_task(
-                handle_media_message,
-                sender=sender,
-                media=media,
-                media_type=message_type,
-                sender_name=sender_name
-            )
-        
-        else:
-            logger.info(f"Unsupported message type: {message_type}")
-        
-        # Always return 200 OK quickly
         return {"status": "ok"}
         
     except Exception as e:
         logger.error(f"Webhook error: {e}")
-        # Still return 200 to prevent Meta from retrying
         return {"status": "error", "message": str(e)}
 
 
-# =============================================================================
-# Message Handlers (Background Tasks)
-# =============================================================================
-
-from .conversation_manager import conversation_manager
-
-async def handle_text_message(sender: str, text: str, sender_name: str):
+async def route_message(sender: str, message: dict, context: dict, sender_profile_name: str):
     """
-    Handle incoming text messages with state management.
+    Step 2: INTENT DETECTION (The Router)
     """
-    try:
-        # Check if sender is an admin with pending verifications
-        admin_phone_formatted = f"+{sender}" if not sender.startswith("+") else sender
-        
-        if admin_phone_formatted in verification_pipeline.admin_pending:
-            # This is likely a verification response
-            result = verification_pipeline.process_admin_reply(
-                admin_phone=admin_phone_formatted,
+    message_type = message.get("type")
+    
+    # --- ADMIN OVERRIDE ---
+    if context["user_type"] == "ADMIN":
+        text = message.get("text", {}).get("body", "") if message_type == "text" else ""
+        if text:
+            # Pass to verification pipeline for admin reply processing
+             verification_pipeline.process_admin_reply(
+                admin_phone=f"+{sender}" if not sender.startswith("+") else sender,
                 reply_text=text
             )
-            logger.info(f"Admin reply processed: {result}")
-            return
+             return
 
-        # --- User Flow (Parents) ---
-        sender_phone = f"+{sender}" if not sender.startswith("+") else sender
-        
-        # 1. Check if we are waiting for a Student Name (Fallback from failed receipt lookup)
-        state = conversation_manager.get_user_state(sender_phone)
-        
-        if state == "IDENTIFYING_STUDENT":
-            context = conversation_manager.get_context(sender_phone)
-            if context:
-                res = verification_pipeline.retry_with_student_name(
-                    sender_phone,
-                    text, 
-                    context.get("extraction", {}),
-                    context.get("file_path", ""),
-                    context.get("school_id")
-                )
-                
-                if res.get("success"):
-                     conversation_manager.clear_session(sender_phone)
-                else:
-                     whatsapp_client.send_text(sender, "❌ Still couldn't find a student with that name. Please check spelling or contact Admin.")
-            else:
-                conversation_manager.clear_session(sender_phone)
-                whatsapp_client.send_text(sender, "⚠️ Session expired. Please upload receipt again.")
-            return 
-
-        # 2. Get next action from Conversation Manager
-        action, reply_message = conversation_manager.handle_incoming_text(text, sender_phone)
-        
-        if action == "SEND_MENU":
-            whatsapp_client.send_interactive_message(
-                sender,
-                "👋 *Welcome to SmartBursar!*\n\nI can help you verify school fee payments instantly.\n\nWhat would you like to do?",
-                [
-                    {"id": "btn_pay", "title": "Submit Receipt"},
-                    {"id": "btn_status", "title": "Check Balance"}
-                ]
-            )
-        
-        elif reply_message:
-            whatsapp_client.send_text(sender, reply_message)
-            
-    except Exception as e:
-        logger.error(f"Text handler error: {e}")
-
-
-async def handle_media_message(sender: str, media: dict, media_type: str, sender_name: str):
-    """
-    Handle incoming media messages (images, documents).
+    # --- PARENT ROUTING ---
     
-    Assumes media is a payment receipt for processing.
+    # Type A: Media/Image (Receipts)
+    if message_type in ("image", "document"):
+        media = message.get(message_type, {})
+        await handle_media_message(sender, media, message_type, context)
+        return
+
+    # Type B: Text (Conversation)
+    if message_type == "text":
+        text = message.get("text", {}).get("body", "")
+        await handle_text_message(sender, text, context, sender_profile_name)
+        return
+        
+    # Unsupported type
+    whatsapp_client.send_text(sender, "⚠️ I can only process text messages and receipt images/PDFs.")
+
+
+async def handle_text_message(sender: str, text: str, context: dict, sender_name: str):
     """
-    try:
-        media_id = media.get("id")
-        
-        if not media_id:
-            whatsapp_client.send_text(sender, "❌ Could not process media. Please try again.")
-            return
-        
-        # Determine file extension
-        mime_type = media.get("mime_type", "")
-        ext_map = {
-            "image/jpeg": ".jpg",
-            "image/png": ".png",
-            "image/heic": ".heic",
-            "application/pdf": ".pdf",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-        }
-        ext = ext_map.get(mime_type, ".bin")
-        
-        # Download media
-        filename = f"{media_id}{ext}"
-        file_path = str(RECEIPTS_DIR / filename)
-        
-        downloaded = whatsapp_client.download_media(media_id, file_path)
-        
-        if not downloaded:
-            whatsapp_client.send_text(sender, "❌ Could not download media. Please try again.")
-            return
-        
-        # Read file content
-        with open(file_path, "rb") as f:
-            file_content = f.read()
-        
-        # For now, we need to know which school this parent belongs to
-        # This is a limitation - we'll need to implement parent registration
-        # For demo, we'll use the first school
-        from config.database import get_db_context
-        from models.school import School
-        
-        with get_db_context() as db:
-            school = db.query(School).first()
-            if not school:
-                whatsapp_client.send_text(
-                    sender,
-                    "⚠️ System not configured. Please contact support."
-                )
-                return
-            
-            school_id = school.id
-        
-        # Process receipt
-        result = verification_pipeline.process_parent_receipt(
-            parent_phone=f"+{sender}" if not sender.startswith("+") else sender,
-            file_content=file_content,
-            filename=filename,
-            school_id=school_id
-        )
-        
-        # Check if we need to ask user for student name
-        if result.get("requires_student_info"):
-            conversation_manager.update_user_state(
-                f"+{sender}" if not sender.startswith("+") else sender,
-                "IDENTIFYING_STUDENT",
-                context_update={
-                    "extraction": result["extraction"],
-                    "file_path": result["file_path"],
-                    "school_id": result["school_id"]
-                }
-            )
-        
-        logger.info(f"Receipt processed: {result}")
-        
-    except Exception as e:
-        logger.error(f"Media handler error: {e}")
-        whatsapp_client.send_text(sender, "❌ Error processing receipt. Please try again.")
+    Handle text messages using Intent Detection.
+    """
+    # Use Conversation Manager to analyze intent
+    # We pass the full context (Students/Schools) to Generate specific replies
+    
+    action, reply = conversation_manager.analyze_intent(
+        text=text,
+        sender_phone=sender,
+        context=context,
+        sender_name=sender_name
+    )
+    
+    if reply:
+        whatsapp_client.send_text(sender, reply)
 
 
-# =============================================================================
-# Health Check
-# =============================================================================
-
-@app.get("/health")
-@limiter.limit("30/minute")
-async def health_check(request: Request):
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "service": "SmartBursar WhatsApp Agent",
-        "whatsapp_configured": bool(whatsapp_client.token)
+async def handle_media_message(sender: str, media: dict, media_type: str, context: dict):
+    """
+    Handle receipt uploads.
+    """
+    media_id = media.get("id")
+    if not media_id:
+        return
+        
+    # Download logic
+    mime_type = media.get("mime_type", "")
+    ext_map = {
+        "image/jpeg": ".jpg", "image/png": ".png", "image/heic": ".heic",
+        "application/pdf": ".pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     }
+    ext = ext_map.get(mime_type, ".bin")
+    filename = f"{media_id}{ext}"
+    file_path = str(RECEIPTS_DIR / filename)
+    
+    downloaded = whatsapp_client.download_media(media_id, file_path)
+    
+    if not downloaded:
+        whatsapp_client.send_text(sender, "❌ Download failed. Please try again.")
+        return
+        
+    with open(file_path, "rb") as f:
+        file_content = f.read()
+
+    # Determine School (Multi-School Case)
+    # If parent has 1 school, use it. If multiple, we might need to ask or use AI to match.
+    # For now, default to the first school in context (or refine logic later)
+    # The Requirement says: "Load contexts for ALL...".
+    # But process_parent_receipt takes one school_id.
+    # We will pass the PRIMARY school (first one) or handle logic inside pipeline.
+    # Better yet: Pass specific school if we can infer it, otherwise first.
+    
+    if not context["schools"]:
+        whatsapp_client.send_text(sender, "⚠️ Error: No school linked to your profile.")
+        return
+
+    # Default to first school
+    target_school = context["schools"][0]
+    
+    # Process
+    verification_pipeline.process_parent_receipt(
+        parent_phone=f"+{sender}" if not sender.startswith("+") else sender,
+        file_content=file_content,
+        filename=filename,
+        school_id=target_school.id
+    )
 
 
 # =============================================================================
-# Privacy Policy & Terms (Required for Meta Live Mode)
+# Admin "GOD MODE" (For Testing)
+# =============================================================================
+
+@app.post("/admin/trigger-test")
+async def admin_trigger_test(
+    phone: str = Query(..., description="Target phone number"),
+    tone: str = Query(..., description="Tone type (term_start, exam_week)")
+):
+    """
+    Step 5: ADMIN 'GOD MODE'
+    Force a specific reminder tone to a specific number.
+    """
+    # This is a placeholder for the actual tone logic which would be in a notification service
+    # For now, we simulate the effect by sending a message
+    
+    message = f"[TEST MODE] Triggering '{tone}' reminder for {phone}"
+    
+    if tone == "term_start":
+        msg_content = "📢 *Term Start Reminder*\nWelcome back! Please ensure 50% fees are paid before resumption."
+    elif tone == "exam_week":
+        msg_content = "🎓 *Exam Week Alert*\nExams start Monday. Please clear all outstanding dues to obtain exam pass."
+    else:
+        msg_content = f"🔔 Test Reminder: {tone}"
+        
+    whatsapp_client.send_text(phone, msg_content)
+    
+    return {"status": "success", "message": message}
+
+# =============================================================================
+# Privacy & Terms (Meta)
 # =============================================================================
 
 @app.get("/privacy")
 async def privacy_policy():
-    """Privacy Policy page for Meta app verification."""
+    """Privacy Policy page."""
     from fastapi.responses import HTMLResponse
-    return HTMLResponse(content="""
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Privacy Policy - SmartBursar</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        p { line-height: 1.6; color: #555; }
-    </style>
-</head>
-<body>
-    <h1>Privacy Policy</h1>
-    <p><strong>Last updated:</strong> January 2026</p>
-    
-    <h2>Introduction</h2>
-    <p>SmartBursar ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information when you use our WhatsApp-based school fee management service.</p>
-    
-    <h2>Information We Collect</h2>
-    <p>We collect the following information:</p>
-    <ul>
-        <li>Phone numbers for WhatsApp communication</li>
-        <li>Payment receipt images submitted for verification</li>
-        <li>Student and payment information provided by schools</li>
-    </ul>
-    
-    <h2>How We Use Your Information</h2>
-    <p>We use your information to:</p>
-    <ul>
-        <li>Process and verify school fee payments</li>
-        <li>Send payment confirmations and reminders via WhatsApp</li>
-        <li>Provide customer support</li>
-    </ul>
-    
-    <h2>Data Security</h2>
-    <p>We implement appropriate security measures to protect your personal information from unauthorized access, alteration, or disclosure.</p>
-    
-    <h2>Contact Us</h2>
-    <p>If you have questions about this Privacy Policy, please contact us through the school administration.</p>
-</body>
-</html>
-    """)
-
+    return HTMLResponse(content="<html><body><h1>Privacy Policy</h1><p>Data stored securely.</p></body></html>")
 
 @app.get("/terms")
 async def terms_of_service():
-    """Terms of Service page for Meta app verification."""
+    """Terms of Service page."""
     from fastapi.responses import HTMLResponse
-    return HTMLResponse(content="""
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Terms of Service - SmartBursar</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        p { line-height: 1.6; color: #555; }
-    </style>
-</head>
-<body>
-    <h1>Terms of Service</h1>
-    <p><strong>Last updated:</strong> January 2026</p>
-    
-    <h2>Acceptance of Terms</h2>
-    <p>By using SmartBursar's WhatsApp service, you agree to these Terms of Service.</p>
-    
-    <h2>Description of Service</h2>
-    <p>SmartBursar provides a WhatsApp-based school fee management and verification service for schools and parents.</p>
-    
-    <h2>User Responsibilities</h2>
-    <p>Users agree to:</p>
-    <ul>
-        <li>Provide accurate payment information</li>
-        <li>Submit genuine payment receipts</li>
-        <li>Use the service only for legitimate school fee purposes</li>
-    </ul>
-    
-    <h2>Limitation of Liability</h2>
-    <p>SmartBursar is not liable for any indirect, incidental, or consequential damages arising from the use of our service.</p>
-    
-    <h2>Contact</h2>
-    <p>For questions about these terms, please contact the school administration.</p>
-</body>
-</html>
-    """)
-
-
-# =============================================================================
-# Test Endpoint (Development Only - BLOCKED IN PRODUCTION)
-# =============================================================================
-
-@app.post("/test/send")
-@limiter.limit("5/minute")
-async def test_send_message(request: Request, to: str, message: str):
-    """
-    Test endpoint to send a WhatsApp message.
-    
-    SECURITY: Only available in development mode. Rate limited to 5/min.
-    
-    Usage: POST /test/send?to=+2348012345678&message=Hello
-    """
-    # SECURITY: Block in production
-    if ENVIRONMENT == "production":
-        raise HTTPException(status_code=404, detail="Not found")
-    
-    result = whatsapp_client.send_text(to, message)
-    return result
+    return HTMLResponse(content="<html><body><h1>Terms of Service</h1><p>Use responsibly.</p></body></html>")

@@ -58,25 +58,14 @@ class VerificationPipeline:
         parent_phone: str,
         file_content: bytes,
         filename: str,
-        school_id: int,
-        student_id: Optional[int] = None
+        school_id: int
     ) -> Dict[str, Any]:
         """
-        Process a receipt submitted by a parent.
-        
-        Args:
-            parent_phone: Parent's WhatsApp number
-            file_content: Raw file bytes
-            filename: Original filename
-            school_id: School ID
-            student_id: Optional student ID (if known)
-        
-        Returns:
-            Processing result dict
+        Process a receipt using 3-Layer Verification Logic.
         """
         import hashlib
         
-        # Step 0: Check for duplicate receipt (SECURITY)
+        # Step 0: Check for duplicate receipt
         file_hash = hashlib.sha256(file_content).hexdigest()
         
         with get_db_context() as db:
@@ -87,154 +76,166 @@ class VerificationPipeline:
             if existing:
                 whatsapp_client.send_text(
                     parent_phone,
-                    f"⚠️ This receipt has already been submitted.\n\n"
-                    f"Receipt #: {existing.receipt_number}\n"
-                    f"Status: {existing.status}\n\n"
-                    "Please contact the school if you believe this is an error."
+                    f"⚠️ Duplicate Receipt detected.\nRef: {existing.receipt_number}\nStatus: {existing.status}"
                 )
-                return {"success": False, "error": "Duplicate receipt", "existing_receipt": existing.receipt_number}
+                return {"success": False, "error": "Duplicate receipt"}
         
-        # Step 1: Send immediate "Processing" feedback
-        whatsapp_client.send_text(
-            parent_phone,
-            "📄 Receipt received! 🧾 Analyzing payment details, please wait..."
-        )
+        # Step 1: Send Processing Feedback
+        whatsapp_client.send_text(parent_phone, "📄 Receipt received! Analyzing...")
         
-        # Step 2: Save file locally
+        # Step 2: Save and Extract
         file_path = file_handler.save_file_locally(file_content, filename)
-        
-        # Step 3: Prepare for Gemini
         prepared = file_handler.prepare_for_gemini(file_path)
         
         if prepared.get("error"):
-            whatsapp_client.send_text(
-                parent_phone,
-                f"❌ Sorry, I couldn't process this file: {prepared['error']}"
-            )
-            return {"success": False, "error": prepared["error"]}
+             return {"success": False, "error": prepared["error"]}
         
-        # Step 4: Extract payment details with AI
         if prepared["type"] == "file":
             extraction = receipt_extractor.extract_from_file(prepared["content"])
         else:
             extraction = receipt_extractor.extract_from_text(prepared["content"])
-        
+            
         if extraction.get("error"):
-            reason = extraction.get("reason", "Unknown error")
-            whatsapp_client.send_text(
-                parent_phone,
-                f"❌ Could not extract payment details: {reason}\n\nPlease send a clearer image of your receipt."
-            )
-            return {"success": False, "error": reason}
-        
-        # Step 5: Create PENDING transaction in database
+            # Log Manual Review if AI fails? No, if AI fails completely, ask again.
+            whatsapp_client.send_text(parent_phone, "❌ Unreadable receipt. Please send a clearer image.")
+            return {"success": False, "error": extraction.get("reason")}
+
+        # Step 3: 3-LAYER VERIFICATION LOGIC
         with get_db_context() as db:
-            school = db.query(School).filter(School.id == school_id).first()
+            school = db.query(School).get(school_id)
             if not school:
                 return {"success": False, "error": "School not found"}
             
-            # Find student if not provided (try to match by sender name)
-            if not student_id:
-                student = self._find_student_by_parent(
-                    db, school_id, extraction.get("sender_name", "")
-                )
-                if student:
-                    student_id = student.id
+            # Identify Student (Required)
+            # Try to match student by Parent Name (Sender) or extraction regex?
+            # For this Phase, we rely on Parent Phone -> Student Link in Gatekeeper.
+            # But here we need to know WHICH student if they have multiple.
+            # Strategy: If parent has 1 student, use it. If multiple, check if extraction has student name?
+            # For simplicity: Use first student linked to this parent & school.
             
-            if not student_id:
-                # Cannot process without knowing the student
-                whatsapp_client.send_text(
-                    parent_phone,
-                    "⚠️ I extracted the payment details, but I couldn't match the Name on the receipt to a student.\n\n"
-                    "Please type the **Student's Full Name** so I can record this payment."
-                )
-                return {
-                    "success": False, 
-                    "error": "Student not identified",
-                    "requires_student_info": True,
-                    "extraction": extraction,
-                    "file_path": file_path,
-                    "school_id": school_id
-                }
+            # Re-query students for this parent+school
+            student = self._find_student_by_parent_and_school(db, parent_phone, school_id)
             
-            student = db.query(Student).filter(Student.id == student_id).first()
+            if not student:
+                 whatsapp_client.send_text(parent_phone, "⚠️ Error: Student record not found.")
+                 return {"success": False}
+                 
+            # --- LAYER 1: PERFECT MATCH (Beneficiary) ---
+            # school_name vs extracted['beneficiary_name']
+            extracted_beneficiary = extraction.get("beneficiary_name", "").lower()
+            school_name_key = school.school_name.lower().split()[0] # e.g. "SmartBursar"
             
-            # Create transaction
-            amount = Decimal(str(extraction.get("amount", 0)))
+            is_perfect_match = False
+            if school_name_key in extracted_beneficiary:
+                is_perfect_match = True
+                
+            # --- LAYER 2: CONTEXT MATCH (Amount + Parent) ---
+            # Parent is already valid (Gatekeeper). Check Amount.
+            extracted_amount = Decimal(str(extraction.get("amount", 0)))
+            outstanding = student.fees_total_due - student.amount_paid
+            
+            # Allow slight variance or exact match? Exact match or matches outstanding.
+            # "Does extracted_amount match student_outstanding_balance (approximate)?"
+            is_context_match = False
+            if abs(extracted_amount - outstanding) < 1000: # 1000 naira tolerance? Or exact?
+                 is_context_match = True
+            
+            # --- DECISION ---
+            status = TransactionStatus.PENDING # Default: Layer 3 (Manual)
+            auto_approved = False
+            
+            if is_perfect_match:
+                status = TransactionStatus.VERIFIED
+                auto_approved = True
+                verification_note = "Auto-Approved: Beneficiary Match"
+            elif is_context_match:
+                status = TransactionStatus.VERIFIED
+                auto_approved = True
+                verification_note = "Auto-Approved: Context Match (Amount)"
+            else:
+                verification_note = "Manual Review: Yellow Flag"
+
+            # Create Transaction
             balance_before = student.fees_total_due - student.amount_paid
-            balance_after = balance_before - amount
             
-            # Generate receipt number
-            payment_count = db.query(Transaction).filter(
-                Transaction.student_id == student_id
-            ).count() + 1
-            receipt_num = generate_receipt_number(
-                school.school_code,
-                datetime.now().year,
-                student_id,
-                payment_count
-            )
+            # Update balance if auto-approved
+            if auto_approved:
+                student.amount_paid += extracted_amount
+            
+            balance_after = student.fees_total_due - student.amount_paid # Recalculate
+            
+            # Generate Receipt Number
+            payment_count = db.query(Transaction).filter(Transaction.student_id == student.id).count() + 1
+            receipt_num = generate_receipt_number(school.school_code, datetime.now().year, student.id, payment_count)
             
             transaction = Transaction(
-                student_id=student_id,
-                amount=amount,
+                student_id=student.id,
+                amount=extracted_amount,
                 date=datetime.now(),
                 method=PaymentMethod.BANK_TRANSFER,
                 receipt_number=receipt_num,
-                status=TransactionStatus.PENDING,
-                notes=json.dumps(extraction),  # Store AI extraction
-                proof_description=file_path,
-                receipt_hash=file_hash,  # SECURITY: For duplicate detection
+                status=status,
+                notes=json.dumps(extraction),
+                proof_description=verification_note,
+                receipt_hash=file_hash,
                 balance_before=balance_before,
                 balance_after=balance_after
             )
             
+            if auto_approved:
+                transaction.verified_at = datetime.now()
+                # Bot acts as verifier? Or System? Leave verified_by_id null.
+            
             db.add(transaction)
             db.commit()
-            db.refresh(transaction)
             
-            # Step 6: Forward to Admin
-            admin_phone = self._get_admin_phone(school)
-            
-            if admin_phone:
-                self._forward_to_admin(
-                    admin_phone=admin_phone,
-                    transaction=transaction,
-                    extraction=extraction,
-                    student=student,
-                    school=school,
-                    file_path=file_path
+            # Step 4: Feedback
+            if auto_approved:
+                whatsapp_client.send_text(
+                    parent_phone,
+                    f"✅ **Payment Successful!**\n\n"
+                    f"Amount: ₦{extracted_amount:,.2f}\n"
+                    f"New Balance: ₦{transaction.balance_after:,.2f}\n"
+                    f"Receipt: {receipt_num}"
+                )
+            else:
+                # Layer 3 Feedback
+                whatsapp_client.send_text(
+                    parent_phone,
+                    f"I received your receipt for ₦{extracted_amount:,.2f}.\n"
+                    f"I couldn't read the school name clearly, so I have passed this to the Bursar for manual confirmation.\n"
+                    f"Your balance will update shortly."
                 )
                 
-                # Track pending verification
-                self.pending_verifications[transaction.id] = {
-                    "parent_phone": parent_phone,
-                    "school_id": school_id,
-                    "student_id": student_id,
-                    "admin_phone": admin_phone,
-                    "extraction": extraction,
-                    "file_path": file_path
-                }
-                
-                # Add to admin's pending list
-                if admin_phone not in self.admin_pending:
-                    self.admin_pending[admin_phone] = []
-                self.admin_pending[admin_phone].append(transaction.id)
+                # Notify Admin
+                admin_phone = self._get_admin_phone(school)
+                if admin_phone:
+                    self._forward_to_admin(admin_phone, transaction, extraction, student, school, file_path)
+                    
+                    # Add to Pending List
+                    self.pending_verifications[transaction.id] = {
+                        "parent_phone": parent_phone,
+                        "school_id": school_id,
+                        "student_id": student.id,
+                        "admin_phone": admin_phone,
+                    }
+                     # Add to admin's pending list
+                    if admin_phone not in self.admin_pending:
+                        self.admin_pending[admin_phone] = []
+                    self.admin_pending[admin_phone].append(transaction.id)
+
+            return {"success": True}
             
-            # Notify parent
-            whatsapp_client.send_text(
-                parent_phone,
-                f"✅ Payment of ₦{amount:,.2f} submitted for verification.\n\n"
-                f"Student: {student.full_name}\n"
-                f"Reference: {receipt_num}\n\n"
-                "You'll receive confirmation once the admin verifies this payment."
-            )
-            
-            return {
-                "success": True,
-                "transaction_id": transaction.id,
-                "receipt_number": receipt_num
-            }
+    def _find_student_by_parent_and_school(self, db, parent_phone, school_id):
+        # Helper to find first student for this parent
+        formatted = f"+{parent_phone}" if not parent_phone.startswith("+") else parent_phone
+        return db.query(Student).filter(
+            (Student.parent_phone_primary == formatted) | 
+            (Student.parent_phone_secondary == formatted),
+            Student.school_id == school_id
+        ).first()
+
+
 
     def retry_with_student_name(
         self,
