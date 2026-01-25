@@ -244,9 +244,9 @@ def admin_seed_data():
             school_name="Excel International College",
             address="Lagos, Nigeria",
             phone="+2348000000000",
-            bank_name="Zenith Bank",
-            account_number="1234567890",
-            account_name="Excel College Tuition",
+            bank_name="Wema Bank",
+            account_number="0247848373",
+            account_name="IMISIOLUWA FAITH OBASEKI",
             country_code="NG",
             subscription_end_date=date(2030, 1, 1) # Fixed: Required field
         )
