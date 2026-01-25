@@ -74,19 +74,33 @@ def get_user_context(phone_number: str) -> Dict[str, Any]:
     """
     Step 1: IDENTITY & CONTEXT (The Gatekeeper)
     """
-    formatted_phone = f"+{phone_number}" if not phone_number.startswith("+") else phone_number
+    # Normalize: Ensure we have a clean string
+    raw_phone = phone_number.strip()
+    
+    # Create variations to search (Robust Matching)
+    # 1. As received (e.g. "23480...")
+    # 2. With plus (e.g. "+23480...")
+    # 3. Without plus (e.g. "23480...")
+    variations = {raw_phone}
+    if not raw_phone.startswith("+"):
+        variations.add(f"+{raw_phone}")
+    else:
+        variations.add(raw_phone.lstrip("+"))
+    
+    formatted_phone = f"+{raw_phone}" if not raw_phone.startswith("+") else raw_phone
     
     if formatted_phone in verification_pipeline.admin_pending:
         return {"user_type": "ADMIN", "students": [], "schools": []}
 
     with get_db_context() as db:
         students = db.query(Student).filter(
-            (Student.parent_phone_primary == formatted_phone) | 
-            (Student.parent_phone_secondary == formatted_phone)
+            (Student.parent_phone_primary.in_(variations)) | 
+            (Student.parent_phone_secondary.in_(variations))
         ).all()
         
         if not students:
-            return {"user_type": "NEW_USER", "students": [], "schools": []}
+            # Debugging: Return formatted phone so we can tell user what we saw
+            return {"user_type": "NEW_USER", "students": [], "schools": [], "debug_phone": formatted_phone}
         
         school_map = {}
         for student in students:
@@ -173,10 +187,11 @@ async def handle_webhook(request: Request, background_tasks: BackgroundTasks):
         user_type = context["user_type"]
         
         if user_type == "NEW_USER":
+            debug_phone = context.get("debug_phone", sender)
             background_tasks.add_task(
                 whatsapp_client.send_text,
                 sender,
-                "🚫 I do not recognize this number. Please contact your School Admin to register."
+                f"🚫 I do not recognize this number ({debug_phone}). Please contact your School Admin to register."
             )
             return {"status": "ok"}
             
