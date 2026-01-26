@@ -108,7 +108,7 @@ def debug_gemini():
         
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model="gemini-1.5-pro",
+            model="gemini-2.0-flash",
             contents=["Say 'Hello SmartBursar!' if you can hear me"],
             config=types.GenerateContentConfig(response_mime_type="text/plain")
         )
