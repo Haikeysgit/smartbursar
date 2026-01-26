@@ -52,7 +52,7 @@ class GeminiClient:
             
             # Generate content
             response = self.client.models.generate_content(
-                model="gemini-2.0-flash", 
+                model="gemini-1.5-pro", 
                 contents=[prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="text/plain"
