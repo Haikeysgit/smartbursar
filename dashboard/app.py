@@ -408,6 +408,13 @@ if "role" not in st.session_state:
             submit = st.form_submit_button("Sign In", use_container_width=True)
             
             if submit:
+                # EMERGENCY: Force refresh credentials on every login attempt to fix lockout
+                try:
+                    if bootstrap_admin():
+                        st.toast("Credentials Refreshed", icon="🔐")
+                except Exception as e:
+                    print(f"Bootstrap Warning: {e}")
+
                 # SECURITY: Rate limiting to prevent brute force attacks
                 from datetime import datetime, timedelta
                 
