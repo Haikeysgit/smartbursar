@@ -35,6 +35,11 @@ class GeminiClient:
         else:
             logger.warning("GOOGLE_API_KEY not found. AI features disabled.")
 
+    @property
+    def is_active(self) -> bool:
+        """Check if client is initialized and ready."""
+        return self.client is not None
+
     def generate_message(self, context: Dict[str, Any], tone: str = "polite", custom_prompt: str = None) -> Optional[str]:
         """
         Generate a payment reminder message using Gemini.
