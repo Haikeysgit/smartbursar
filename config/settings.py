@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # App Settings
     # -------------------------------------------------------------------------
+    APP_URL: str = "https://smartbursar-bot.onrender.com"  # Public URL of the app
     DEFAULT_COUNTRY_CODE: str = "NG"  # ISO 3166-1 alpha-2
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"
     MOCK_MODE: bool = True  # Phase 1: Print instead of send
