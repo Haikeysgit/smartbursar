@@ -287,6 +287,54 @@ class WhatsAppCloudAPI:
         logger.warning(f"Webhook verification failed. Mode: {mode}, Token: {token}")
         return None
 
+    # =========================================================================
+    # Business Profile Management
+    # =========================================================================
+
+    def update_business_profile(self, websites: list = None, email: str = None, description: str = None, address: str = None, vertical: str = None) -> Dict[str, Any]:
+        """
+        Update WhatsApp Business Profile.
+        
+        Args:
+            websites: List of websites (max 2). Pass [] to clear.
+            email: Business email contact.
+            description: Business description (max 256 chars).
+            address: Business address.
+            vertical: Industry vertical (e.g., "EDU", "FINANCE").
+            
+        Returns:
+            API response dict
+        """
+        url = f"{self.BASE_URL}/{self.phone_number_id}/whatsapp_business_profile"
+        
+        payload = {"messaging_product": "whatsapp"}
+        
+        # Only include fields that are not None
+        if websites is not None:
+            payload["websites"] = websites
+        if email is not None:
+            payload["email"] = email
+        if description is not None:
+            payload["description"] = description
+        if address is not None:
+            payload["address"] = address
+        if vertical is not None:
+            payload["vertical"] = vertical
+            
+        try:
+            response = requests.post(url, headers=self.headers, json=payload, timeout=30)
+            response.raise_for_status()
+            logger.info("Business profile updated successfully")
+            return {"success": True, "data": response.json()}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to update business profile: {e}")
+            try:
+                error_detail = e.response.json()
+                logger.error(f"Error detail: {error_detail}")
+                return {"success": False, "error": str(e), "detail": error_detail}
+            except:
+                return {"success": False, "error": str(e)}
+
 
 # Singleton instance
 whatsapp_client = WhatsAppCloudAPI()

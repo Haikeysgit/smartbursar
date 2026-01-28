@@ -84,6 +84,19 @@ def startup_event():
     except Exception as e:
         logger.critical(f"Failed to initialize database: {e}")
 
+    # Auto-seed for Render Ephemeral filesystem
+    try:
+        db = SessionLocal()
+        student_count = db.query(Student).count()
+        if student_count == 0:
+            logger.info("Database is empty. Seeding test data...")
+            from scripts.seed_test_data import seed_data
+            seed_data(db)
+            logger.info("Test data seeded successfully.")
+        db.close()
+    except Exception as e:
+        logger.error(f"Failed to auto-seed data: {e}")
+
 @app.get("/health")
 async def health_check():
     """Simple health check for Railway deployment."""
