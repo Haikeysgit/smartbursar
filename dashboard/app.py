@@ -161,12 +161,12 @@ def get_logo_base64():
 # =============================================================================
 
 def bootstrap_admin():
-    """Auto-create default admin if users table is empty."""
+    """Auto-create or reset default admin."""
     with get_db_context() as db:
-        if db.query(User).count() == 0:
-            from passlib.context import CryptContext
-            pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-            
+        # ALWAYS check for admin user, don't rely on count
+        admin = db.query(User).filter(User.email == "admin@school.com").first()
+        
+        if not admin:
             # Create Dummy School if needed
             school = db.query(School).first()
             if not school:
@@ -174,7 +174,6 @@ def bootstrap_admin():
                     name="SmartBursar Academy",
                     school_name="SmartBursar Academy",
                     email="test@smartbursar.com",
-                    phone="08012345678",
                     address="123 Test St",
                     password_hash="hashed",
                     account_number="0000000000",
@@ -183,18 +182,24 @@ def bootstrap_admin():
                 db.add(school)
                 db.commit()
                 db.refresh(school)
-
-            # Create Super Admin
+            
+            # Create New Admin
             admin = User(
                 email="admin@school.com",
                 role="SUPER_ADMIN",
                 school_id=school.id,
                 is_active=True
             )
-            admin.set_password("password123")  # Use model method for correct bcrypt hashing
+            admin.set_password("password123")
             db.add(admin)
-            db.commit()
-            return True
+            print("Status: Created New Admin")
+        else:
+            # FORCE RESET PASSWORD
+            admin.set_password("password123")
+            print("Status: Reset Admin Password")
+            
+        db.commit()
+        return True
     return False
 
 # Run bootstrap check once on script load
