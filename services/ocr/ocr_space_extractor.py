@@ -69,9 +69,13 @@ class OCRSpaceExtractor:
     def _ocr_extract(self, file_path: str) -> str:
         """Use OCR.space API to extract text from image."""
         try:
+            logger.info(f"OCR.space: Starting extraction for {file_path}")
+            
             # Read and encode file
             with open(file_path, "rb") as f:
                 file_bytes = f.read()
+            
+            logger.info(f"OCR.space: File size = {len(file_bytes)} bytes")
             
             # Determine file type
             is_pdf = file_path.lower().endswith(".pdf")
@@ -93,25 +97,37 @@ class OCRSpaceExtractor:
             if is_pdf:
                 data["isCreateSearchablePdf"] = "false"
             
+            logger.info(f"OCR.space: Sending request to API...")
+            
             with httpx.Client(timeout=60.0) as client:
                 response = client.post(OCR_SPACE_URL, data=data, files=files)
+                logger.info(f"OCR.space: Response status = {response.status_code}")
                 response.raise_for_status()
                 
                 result = response.json()
+                logger.info(f"OCR.space: Response keys = {result.keys()}")
                 
                 if result.get("IsErroredOnProcessing"):
-                    logger.error(f"OCR.space error: {result.get('ErrorMessage')}")
+                    error_msg = result.get("ErrorMessage", ["Unknown error"])
+                    logger.error(f"OCR.space error: {error_msg}")
                     return ""
                 
                 # Extract text from all parsed results
                 parsed_results = result.get("ParsedResults", [])
-                if parsed_results:
-                    return parsed_results[0].get("ParsedText", "")
+                logger.info(f"OCR.space: Found {len(parsed_results)} parsed results")
                 
+                if parsed_results:
+                    text = parsed_results[0].get("ParsedText", "")
+                    logger.info(f"OCR.space: Extracted {len(text)} characters of text")
+                    return text
+                
+                logger.warning("OCR.space: No parsed results returned")
                 return ""
                 
         except Exception as e:
             logger.error(f"OCR.space extraction failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return ""
     
     def _parse_receipt_text(self, text: str) -> Dict[str, Any]:
