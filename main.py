@@ -233,6 +233,32 @@ def seed_test_data():
         db.close()
 
 
+
+# =============================================================================
+# Scheduler Trigger (Manual 7AM Simulation)
+# =============================================================================
+
+@app.get("/trigger-daily-tasks")
+def trigger_daily_tasks(db: Session = Depends(get_db)):
+    """
+    Manually trigger the 7AM daily tasks (Reminders).
+    Useful for testing or recovering from missed cron jobs.
+    """
+    try:
+        from services.scheduler.reminder_engine import run_reminder_cycle
+        
+        # Run the cycle
+        stats = run_reminder_cycle(db)
+        
+        return {
+            "success": True, 
+            "message": "Daily tasks executed successfully",
+            "stats": stats
+        }
+    except Exception as e:
+        logger.error(f"Daily task execution failed: {e}")
+        return {"success": False, "error": str(e)}
+
 # =============================================================================
 # Admin Endpoints (Moved from webhook_handler.py)
 # =============================================================================
