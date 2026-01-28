@@ -172,11 +172,9 @@ class VerificationPipeline:
             # Check 2: Account Name in Beneficiary (Robust check)
             elif account_name_key and account_name_key in extracted_beneficiary:
                 is_perfect_match = True
-                
-            # Check 3: Account Name in Sender (OCR swap edge case)
-            elif account_name_key and account_name_key in extracted_sender:
-                is_perfect_match = True
-                logger.info("PIPELINE: Match found in sender_name (OCR swap detected)")
+            
+            # REMOVED: Check 3 (Sender Match) - This caused outgoing transfers to verify!
+            # We strictly only care if the School is the BENEFICIARY.
                 
             # --- LAYER 2: CONTEXT MATCH (Amount + Parent) ---
             # Parent is already valid (Gatekeeper). Check Amount.
