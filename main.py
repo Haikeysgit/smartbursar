@@ -205,11 +205,10 @@ def seed_test_data():
             class_level="JSS 1",
             parent_name="Demo Parent",
             parent_phone_primary="+2348038004334",
-            parent_email="parent@demo.com",
             school_id=school.id,
             fees_total_due=Decimal("50000.00"),
             amount_paid=Decimal("0.00"),
-            payment_due_date=datetime.now() + timedelta(days=30)
+            due_date=datetime.now().date() + timedelta(days=30)
         )
         db.add(student)
         db.commit()
