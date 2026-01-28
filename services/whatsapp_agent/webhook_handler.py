@@ -306,9 +306,13 @@ async def handle_text_message(sender: str, text: str, context: dict, sender_name
 
 
 async def handle_media_message(sender: str, media: dict, media_type: str, context: dict):
+    logger.info(f"RECEIPT: handle_media_message started for {sender}")
     media_id = media.get("id")
     if not media_id:
+        logger.warning(f"RECEIPT: No media_id found")
         return
+    
+    logger.info(f"RECEIPT: Media ID = {media_id}")
         
     mime_type = media.get("mime_type", "")
     ext_map = {
@@ -320,28 +324,44 @@ async def handle_media_message(sender: str, media: dict, media_type: str, contex
     filename = f"{media_id}{ext}"
     file_path = str(RECEIPTS_DIR / filename)
     
+    logger.info(f"RECEIPT: Downloading to {file_path}")
     downloaded = whatsapp_client.download_media(media_id, file_path)
     
     if not downloaded:
+        logger.error(f"RECEIPT: Download failed!")
         whatsapp_client.send_text(sender, "❌ Download failed. Please try again.")
         return
+    
+    logger.info(f"RECEIPT: Download successful")
         
     with open(file_path, "rb") as f:
         file_content = f.read()
+    
+    logger.info(f"RECEIPT: File size = {len(file_content)} bytes")
 
     if not context["schools"]:
+        logger.error(f"RECEIPT: No school in context!")
         whatsapp_client.send_text(sender, "⚠️ Error: No school linked to your profile.")
         return
 
     target_school = context["schools"][0]
+    school_id = target_school.get("school_id")
+    logger.info(f"RECEIPT: Target school_id = {school_id}")
     
     # Schools are now dicts with school_id included
-    verification_pipeline.process_parent_receipt(
-        parent_phone=f"+{sender}" if not sender.startswith("+") else sender,
-        file_content=file_content,
-        filename=filename,
-        school_id=target_school.get("school_id")
-    )
+    try:
+        result = verification_pipeline.process_parent_receipt(
+            parent_phone=f"+{sender}" if not sender.startswith("+") else sender,
+            file_content=file_content,
+            filename=filename,
+            school_id=school_id
+        )
+        logger.info(f"RECEIPT: Pipeline result = {result}")
+    except Exception as e:
+        logger.error(f"RECEIPT: Pipeline exception: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        whatsapp_client.send_text(sender, "❌ Error processing receipt. Please try again.")
 
 # Endpoints for admin tests moved to main.py
 # Privacy/Terms moved to main.py (or could stay here, but better in main if global)
