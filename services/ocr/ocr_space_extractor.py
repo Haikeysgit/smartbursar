@@ -123,7 +123,7 @@ class OCRSpaceExtractor:
             }
             
             payload = {
-                "model": "llama-3.1-8b-instant",
+                "model": "llama3-8b-8192",
                 "messages": [
                     {"role": "system", "content": """You are a receipt parser. Extract payment details from the text and return ONLY valid JSON in this exact format:
 {
