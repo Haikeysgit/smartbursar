@@ -228,6 +228,7 @@ def get_message_sender(db: Session):
         from services.messaging.whatsapp_sender import WhatsAppSender
         return WhatsAppSender(db)
     
-    # Default: Twilio (not implemented yet)
-    raise NotImplementedError("Twilio sender not yet implemented. Set MOCK_MODE=True or WHATSAPP_MODE=True")
+    # Default: Meta WhatsApp API (Production)
+    from services.messaging.meta_sender import MetaWhatsAppSender
+    return MetaWhatsAppSender(db)
 
