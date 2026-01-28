@@ -65,40 +65,66 @@ class VerificationPipeline:
         """
         import hashlib
         
-        # Step 0: Check for duplicate receipt
-        file_hash = hashlib.sha256(file_content).hexdigest()
-        
-        with get_db_context() as db:
-            existing = db.query(Transaction).filter(
-                Transaction.receipt_hash == file_hash
-            ).first()
+        try:
+            logger.info(f"PIPELINE: Starting receipt processing for {parent_phone}")
+            logger.info(f"PIPELINE: Filename={filename}, school_id={school_id}, content_size={len(file_content)}")
             
-            if existing:
-                whatsapp_client.send_text(
-                    parent_phone,
-                    f"⚠️ Duplicate Receipt detected.\nRef: {existing.receipt_number}\nStatus: {existing.status}"
-                )
-                return {"success": False, "error": "Duplicate receipt"}
-        
-        # Step 1: Send Processing Feedback
-        whatsapp_client.send_text(parent_phone, "📄 Receipt received! Analyzing...")
-        
-        # Step 2: Save and Extract
-        file_path = file_handler.save_file_locally(file_content, filename)
-        prepared = file_handler.prepare_for_gemini(file_path)
-        
-        if prepared.get("error"):
-             return {"success": False, "error": prepared["error"]}
-        
-        if prepared["type"] == "file":
-            extraction = receipt_extractor.extract_from_file(prepared["content"])
-        else:
-            extraction = receipt_extractor.extract_from_text(prepared["content"])
+            # Step 0: Check for duplicate receipt
+            file_hash = hashlib.sha256(file_content).hexdigest()
+            logger.info(f"PIPELINE: File hash computed")
             
-        if extraction.get("error"):
-            # Log Manual Review if AI fails? No, if AI fails completely, ask again.
-            whatsapp_client.send_text(parent_phone, "❌ Unreadable receipt. Please send a clearer image.")
-            return {"success": False, "error": extraction.get("reason")}
+            with get_db_context() as db:
+                existing = db.query(Transaction).filter(
+                    Transaction.receipt_hash == file_hash
+                ).first()
+                
+                if existing:
+                    whatsapp_client.send_text(
+                        parent_phone,
+                        f"⚠️ Duplicate Receipt detected.\nRef: {existing.receipt_number}\nStatus: {existing.status}"
+                    )
+                    return {"success": False, "error": "Duplicate receipt"}
+            
+            # Step 1: Send Processing Feedback
+            logger.info(f"PIPELINE: Sending 'Analyzing' message")
+            whatsapp_client.send_text(parent_phone, "📄 Receipt received! Analyzing...")
+            
+            # Step 2: Save and Extract
+            logger.info(f"PIPELINE: Saving file locally")
+            file_path = file_handler.save_file_locally(file_content, filename)
+            logger.info(f"PIPELINE: File saved to {file_path}")
+            
+            logger.info(f"PIPELINE: Preparing file for processing")
+            prepared = file_handler.prepare_for_gemini(file_path)
+            logger.info(f"PIPELINE: Prepared result type={prepared.get('type')}, error={prepared.get('error')}")
+            
+            if prepared.get("error"):
+                logger.error(f"PIPELINE: Prepare error: {prepared['error']}")
+                whatsapp_client.send_text(parent_phone, f"❌ File error: {prepared['error']}")
+                return {"success": False, "error": prepared["error"]}
+            
+            logger.info(f"PIPELINE: Starting OCR extraction")
+            if prepared["type"] == "file":
+                extraction = receipt_extractor.extract_from_file(prepared["content"])
+            else:
+                extraction = receipt_extractor.extract_from_text(prepared["content"])
+            
+            logger.info(f"PIPELINE: Extraction result: {extraction}")
+                
+            if extraction.get("error"):
+                reason = extraction.get("reason", "Unknown error")
+                logger.error(f"PIPELINE: Extraction error: {reason}")
+                whatsapp_client.send_text(parent_phone, f"❌ Unreadable receipt: {reason}. Please send a clearer image.")
+                return {"success": False, "error": reason}
+            
+            logger.info(f"PIPELINE: Extraction successful, proceeding to verification")
+            
+        except Exception as e:
+            logger.error(f"PIPELINE CRASH: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            whatsapp_client.send_text(parent_phone, "❌ An error occurred processing your receipt. Please try again.")
+            return {"success": False, "error": str(e)}
 
         # Step 3: 3-LAYER VERIFICATION LOGIC
         with get_db_context() as db:
