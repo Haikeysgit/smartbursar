@@ -29,6 +29,8 @@ def check_password():
             del st.session_state["password"]  # don't store password
             del st.session_state["username"]
         else:
+            import time
+            time.sleep(3)  # Anti-Brute Force Delay
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
