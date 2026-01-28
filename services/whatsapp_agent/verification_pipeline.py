@@ -16,6 +16,10 @@ import logging
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional, Dict, Any, Tuple
+import pathlib
+
+RECEIPTS_DIR = pathlib.Path(__file__).parent.parent.parent / "receipts"
+RECEIPTS_DIR.mkdir(exist_ok=True)
 
 from sqlalchemy.orm import Session
 
@@ -216,27 +220,74 @@ class VerificationPipeline:
             db.commit()
             
             # Step 4: Feedback
+            # Step 4: Feedback
             if auto_approved:
-                whatsapp_client.send_text(
-                    parent_phone,
-                    f"✅ **Payment Successful!**\n\n"
-                    f"Amount: ₦{extracted_amount:,.2f}\n"
-                    f"New Balance: ₦{transaction.balance_after:,.2f}\n"
-                    f"Receipt: {receipt_num}"
-                )
+                # Generate PDF Receipt
+                try:
+                    from services.payments.receipt_generator import create_receipt_from_transaction, save_receipt_to_file
+                    
+                    receipt_data = create_receipt_from_transaction(transaction, student, school)
+                    pdf_filename = f"receipt_{receipt_num}.pdf"
+                    pdf_path = RECEIPTS_DIR / pdf_filename  # Make sure RECEIPTS_DIR is imported/available
+                    
+                    save_receipt_to_file(receipt_data, pdf_path)
+                    logger.info(f"Generated receipt PDF: {pdf_path}")
+                    
+                    whatsapp_client.send_text(
+                        parent_phone,
+                        f"✅ **Payment Verified!**\n\n"
+                        f"Amount: ₦{extracted_amount:,.2f}\n"
+                        f"Student: {student.full_name}\n"
+                        f"New Balance: ₦{transaction.balance_after:,.2f}"
+                    )
+                    
+                    whatsapp_client.send_document(
+                        parent_phone,
+                        str(pdf_path),
+                        caption=f"🧾 Receipt {receipt_num}"
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Failed to generate receipt PDF: {e}")
+                    whatsapp_client.send_text(
+                        parent_phone,
+                        f"✅ **Payment Verified!**\n\n"
+                        f"Amount: ₦{extracted_amount:,.2f}\n"
+                        f"Receipt: {receipt_num}\n"
+                        f"(PDF receipt generation failed, but payment is recorded)"
+                    )
+
             else:
-                # Layer 3 Feedback
+                # Layer 3 Feedback (Manual Review Needed)
                 whatsapp_client.send_text(
                     parent_phone,
-                    f"I received your receipt for ₦{extracted_amount:,.2f}.\n"
-                    f"I couldn't read the school name clearly, so I have passed this to the Bursar for manual confirmation.\n"
-                    f"Your balance will update shortly."
+                    f"📄 **Receipt Received**\n"
+                    f"Amount: ₦{extracted_amount:,.2f}\n\n"
+                    f"There was a slight mismatch in the details, so I've sent this to the Bursar for manual confirmation.\n"
+                    f"You'll receive your receipt once approved!"
                 )
                 
                 # Notify Admin
                 admin_phone = self._get_admin_phone(school)
                 if admin_phone:
-                    self._forward_to_admin(admin_phone, transaction, extraction, student, school, file_path)
+                    # Clearer Admin Message
+                    whatsapp_client.send_text(
+                        admin_phone,
+                        f"👮‍♂️ **Admin Action Needed**\n"
+                        f"Payment Verification Request\n\n"
+                        f"Student: {student.full_name}\n"
+                        f"Amount: ₦{extracted_amount:,.2f}\n"
+                        f"Bank: {extraction.get('bank_name', 'Unknown')}\n"
+                        f"Sender: {extraction.get('sender_name', 'Unknown')}\n\n"
+                        f"Reply 'Confirmed' to approve or 'Fake' to reject."
+                    )
+                    
+                    # Forward the image to admin so they can see it
+                    whatsapp_client.send_document(
+                        admin_phone,
+                        file_path,
+                        caption="📎 Proof of Payment"
+                    )
                     
                     # Add to Pending List
                     self.pending_verifications[transaction.id] = {
