@@ -70,7 +70,8 @@ async def health_check():
 
 @app.get("/")
 def home():
-    return {"message": "SmartBursar API is running. WhatsApp Webhook at /webhook"}
+    """Keep-alive endpoint for UptimeRobot pinger."""
+    return "SmartBursar is Active"
 
 
 @app.get("/debug/students")

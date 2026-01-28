@@ -70,6 +70,9 @@ def verify_webhook_signature(payload: bytes, signature: str) -> bool:
 # Identity Gatekeeper
 # =============================================================================
 
+# ADMIN BYPASS: Ensures testing phone is never locked out
+ADMIN_BYPASS_PHONE = "+2348038004334"
+
 def get_user_context(phone_number: str) -> Dict[str, Any]:
     """
     Step 1: IDENTITY & CONTEXT (The Gatekeeper)
@@ -97,6 +100,32 @@ def get_user_context(phone_number: str) -> Dict[str, Any]:
             (Student.parent_phone_primary.in_(variations)) | 
             (Student.parent_phone_secondary.in_(variations))
         ).all()
+        
+        # ADMIN BYPASS CHECK: If this is the testing phone and no student found,
+        # return mock data so the admin is never locked out during development
+        if not students and (formatted_phone == ADMIN_BYPASS_PHONE or raw_phone.endswith("8038004334")):
+            logger.info(f"ADMIN BYPASS activated for {formatted_phone}")
+            return {
+                "user_type": "EXISTING_PARENT",
+                "students": [{
+                    "full_name": "Test Student (Admin Bypass)",
+                    "class_level": "Admin",
+                    "fees_total_due": 0.0,
+                    "amount_paid": 0.0,
+                    "balance": 0.0,
+                    "payment_status": "PAID",
+                    "due_date": None,
+                    "days_until_due": 0
+                }],
+                "schools": [{
+                    "school_id": 1,
+                    "school_name": "SmartBursar Test School",
+                    "bank_name": "Test Bank",
+                    "account_number": "0000000000",
+                    "account_name": "Test Account",
+                    "phone": ADMIN_BYPASS_PHONE
+                }]
+            }
         
         if not students:
             # Debugging: Return formatted phone so we can tell user what we saw

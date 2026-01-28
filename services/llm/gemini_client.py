@@ -9,12 +9,12 @@ context-aware payment reminders.
 import os
 import logging
 from typing import Optional, Dict, Any
-import os
-import logging
-from typing import Optional, Dict, Any
+
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+
+from utils.gemini_retry import call_with_retry
 
 # Load env to ensure we have the key
 load_dotenv()
@@ -50,8 +50,9 @@ class GeminiClient:
                 # Use template-based prompt (legacy mode)
                 prompt = self._build_prompt(context, tone)
             
-            # Generate content
-            response = self.client.models.generate_content(
+            # Generate content with retry on quota exceeded
+            response = call_with_retry(
+                self.client.models.generate_content,
                 model="gemini-2.0-flash-lite", 
                 contents=[prompt],
                 config=types.GenerateContentConfig(

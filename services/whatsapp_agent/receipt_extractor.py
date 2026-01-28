@@ -9,6 +9,8 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
+from utils.gemini_retry import call_with_retry
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -63,7 +65,9 @@ class ReceiptExtractor:
                 )
             ]
 
-            response = self.client.models.generate_content(
+            # Generate content with retry on quota exceeded
+            response = call_with_retry(
+                self.client.models.generate_content,
                 model="gemini-2.0-flash-lite",
                 contents=prompt_content,
                 config=types.GenerateContentConfig(
@@ -83,7 +87,9 @@ class ReceiptExtractor:
             return {"error": True, "reason": "Gemini not initialized"}
         
         try:
-            response = self.client.models.generate_content(
+            # Generate content with retry on quota exceeded
+            response = call_with_retry(
+                self.client.models.generate_content,
                 model="gemini-2.0-flash-lite",
                 contents=[self.SYSTEM_PROMPT, text],
                 config=types.GenerateContentConfig(

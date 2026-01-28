@@ -1,3 +1,4 @@
-# Railway Deployment - SmartBursar (Webhook API + Dashboard)
+# Render Deployment - SmartBursar (Webhook API)
+# Uses gunicorn with uvicorn workers for ASGI support
 
-web: python railway_runner.py
+web: gunicorn main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT

@@ -8,6 +8,7 @@
 # -----------------------------------------------------------------------------
 fastapi>=0.109.0          # Async web framework for webhooks
 uvicorn>=0.27.0           # ASGI server
+gunicorn>=21.0.0          # Production WSGI/ASGI server for Render
 pydantic>=2.0.0           # Data validation
 pydantic-settings>=2.0.0  # Settings management
 slowapi>=0.1.9            # Rate limiting for FastAPI

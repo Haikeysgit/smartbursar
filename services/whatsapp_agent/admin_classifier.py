@@ -18,6 +18,8 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
+from utils.gemini_retry import call_with_retry
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -58,7 +60,9 @@ class AdminClassifier:
             return self._fallback_classify(admin_reply)
         
         try:
-            response = self.client.models.generate_content(
+            # Generate content with retry on quota exceeded
+            response = call_with_retry(
+                self.client.models.generate_content,
                 model="gemini-1.5-flash",
                 contents=[self.SYSTEM_PROMPT, f"Admin says: '{admin_reply}'"],
                 config=types.GenerateContentConfig(
