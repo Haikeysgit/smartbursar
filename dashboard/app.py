@@ -461,6 +461,34 @@ if "role" not in st.session_state:
                         else:
                             remaining = 5 - st.session_state["login_attempts"]
                             st.error(f"Invalid email or password. {remaining} attempts remaining.")
+
+        # --- DEBUG SECTION (REMOVE AFTER FIX) ---
+        with st.expander("🛠️ Connection Debugger (Click if stuck)"):
+            try:
+                st.write(f"Env: {os.getenv('ENVIRONMENT', 'dev')}")
+                st.write(f"DB URL Set: {'Yes' if os.getenv('DATABASE_URL') else 'NO'}")
+                
+                with get_db_context() as db:
+                    u_count = db.query(User).count()
+                    st.write(f" Users in DB: {u_count}")
+                    
+                    target = db.query(User).filter(User.email == "admin@abcschool.com").first()
+                    if target:
+                        st.write("✅ User 'admin@abcschool.com' FOUND")
+                        st.write(f"   Role: {target.role}")
+                        is_valid = target.check_password("school123")
+                        st.write(f"   Password 'school123' Valid: {is_valid}")
+                    else:
+                        st.error("❌ User 'admin@abcschool.com' NOT FOUND")
+
+                    target_super = db.query(User).filter(User.email == "admin@school.com").first()
+                    if target_super:
+                         st.write("✅ User 'admin@school.com' FOUND")
+                         is_valid_super = target_super.check_password("password123")
+                         st.write(f"   Password 'password123' Valid: {is_valid_super}")
+            except Exception as e:
+                st.error(f"DB Connection Failed: {e}")
+        # ----------------------------------------
         
         # Contact Info (no credentials shown for security)
         st.markdown("""
