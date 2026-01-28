@@ -157,6 +157,54 @@ def get_logo_base64():
 
 
 # =============================================================================
+# Authentication & Bootstrap
+# =============================================================================
+
+def bootstrap_admin():
+    """Auto-create default admin if users table is empty."""
+    with get_db_context() as db:
+        if db.query(User).count() == 0:
+            from passlib.context import CryptContext
+            pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+            
+            # Create Dummy School if needed
+            school = db.query(School).first()
+            if not school:
+                school = School(
+                    name="SmartBursar Academy",
+                    school_name="SmartBursar Academy",
+                    email="test@smartbursar.com",
+                    phone="08012345678",
+                    address="123 Test St",
+                    password_hash="hashed",
+                    account_number="0000000000",
+                    bank_name="Test Bank"
+                )
+                db.add(school)
+                db.commit()
+                db.refresh(school)
+
+            # Create Super Admin
+            admin = User(
+                email="admin@school.com",
+                hashed_password=pwd_context.hash("password123"),
+                role="SUPER_ADMIN",
+                school_id=school.id,
+                is_active=True
+            )
+            db.add(admin)
+            db.commit()
+            return True
+    return False
+
+# Run bootstrap check once on script load
+try:
+    if bootstrap_admin():
+        pass # Admin created silently
+except Exception:
+    pass # Database might not be ready, skip
+
+# =============================================================================
 # Authentication
 # =============================================================================
 
