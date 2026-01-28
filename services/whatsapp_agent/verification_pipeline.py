@@ -27,7 +27,7 @@ from config.settings import generate_receipt_number
 
 from .whatsapp_client import whatsapp_client
 from .file_handler import file_handler
-from .receipt_extractor import receipt_extractor
+from services.ocr.ocr_space_extractor import receipt_extractor
 from .admin_classifier import admin_classifier
 
 logger = logging.getLogger(__name__)

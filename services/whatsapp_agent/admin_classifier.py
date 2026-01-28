@@ -2,7 +2,7 @@
 =============================================================================
 SmartBursar - Admin Intent Classifier
 =============================================================================
-Uses Gemini to classify admin responses for payment verification.
+Uses Groq to classify admin responses for payment verification.
 
 Classifications:
 - APPROVED: Admin confirms the payment is valid
@@ -14,11 +14,8 @@ import os
 import logging
 from typing import Literal
 
-from google import genai
-from google.genai import types
+import httpx
 from dotenv import load_dotenv
-
-from utils.gemini_retry import call_with_retry
 
 load_dotenv()
 
@@ -27,10 +24,12 @@ logger = logging.getLogger(__name__)
 # Valid intent types
 IntentType = Literal["APPROVED", "REJECTED", "UNKNOWN"]
 
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
 
 class AdminClassifier:
     """
-    Classifies admin replies into verification intents.
+    Classifies admin replies into verification intents using Groq.
     """
     
     SYSTEM_PROMPT = """You are an Admin Intent Classifier.
@@ -40,45 +39,50 @@ class AdminClassifier:
     - REJECTED: no, fake, reject, fraud, invalid, lie, false, wrong, bogus, na lie, ❌, 👎
     - UNKNOWN: unrelated text, questions
     
-    Return ONLY the category word."""
+    Return ONLY the category word, nothing else."""
 
     def __init__(self):
-        self.api_key = os.getenv("GOOGLE_API_KEY", "")
-        self.client = None
+        self.api_key = os.getenv("GROQ_API_KEY", "")
         
         if self.api_key:
-            try:
-                self.client = genai.Client(api_key=self.api_key)
-                logger.info("Admin Classifier initialized with google-genai SDK")
-            except Exception as e:
-                logger.error(f"Failed to initialize Gemini for classifier: {e}")
+            logger.info("Admin Classifier initialized with Groq")
         else:
-            logger.warning("GOOGLE_API_KEY not set. Admin classification disabled.")
+            logger.warning("GROQ_API_KEY not set. Using fallback classification.")
     
     def classify(self, admin_reply: str) -> IntentType:
-        if not self.client:
+        if not self.api_key:
             return self._fallback_classify(admin_reply)
         
         try:
-            # Generate content with retry on quota exceeded
-            response = call_with_retry(
-                self.client.models.generate_content,
-                model="gemini-1.5-flash",
-                contents=[self.SYSTEM_PROMPT, f"Admin says: '{admin_reply}'"],
-                config=types.GenerateContentConfig(
-                    response_mime_type="text/plain"
-                )
-            )
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
             
-            result = response.text.strip().upper()
+            payload = {
+                "model": "llama-3.1-8b-instant",  # Fast model for classification
+                "messages": [
+                    {"role": "system", "content": self.SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Admin says: '{admin_reply}'"}
+                ],
+                "temperature": 0.1,
+                "max_tokens": 20
+            }
             
-            if "APPROVED" in result: return "APPROVED"
-            if "REJECTED" in result: return "REJECTED"
-            if "UNKNOWN" in result: return "UNKNOWN"
+            with httpx.Client(timeout=15.0) as client:
+                response = client.post(GROQ_API_URL, headers=headers, json=payload)
+                response.raise_for_status()
+                
+                result = response.json()
+                intent = result["choices"][0]["message"]["content"].strip().upper()
+            
+            if "APPROVED" in intent: return "APPROVED"
+            if "REJECTED" in intent: return "REJECTED"
+            if "UNKNOWN" in intent: return "UNKNOWN"
             
             # Direct match
-            if result in ("APPROVED", "REJECTED", "UNKNOWN"):
-                return result
+            if intent in ("APPROVED", "REJECTED", "UNKNOWN"):
+                return intent
             
             return "UNKNOWN"
             
@@ -90,7 +94,7 @@ class AdminClassifier:
         """
         Simple keyword-based fallback classification.
         
-        Used when Gemini is unavailable.
+        Used when Groq is unavailable.
         """
         text_lower = text.lower().strip()
         

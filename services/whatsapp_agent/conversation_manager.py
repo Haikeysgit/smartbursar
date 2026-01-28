@@ -34,11 +34,11 @@ class BotConversationManager:
         
         # 1. WANT TO PAY
         # =================================================================
-        # FULL AI MODE: Let Gemini handle ALL conversations naturally
+        # FULL AI MODE: Let Groq handle ALL conversations naturally
         # =================================================================
-        logger.info(f"Routing '{text}' to AI for natural language processing")
+        logger.info(f"Routing '{text}' to Groq AI for natural language processing")
         
-        from services.llm.gemini_client import gemini_client
+        from services.llm.groq_client import groq_client
         
         # Prepare rich context for AI
         students = context.get("students", [])
@@ -79,8 +79,8 @@ If they ask about:
 
 Respond naturally and helpfully. Keep it concise (2-3 sentences max)."""
         
-        # Generate AI response with enhanced prompt
-        ai_reply = gemini_client.generate_message(ai_context, tone="helpful", custom_prompt=system_instruction)
+        # Generate AI response with Groq
+        ai_reply = groq_client.generate_message(ai_context, tone="helpful", custom_prompt=system_instruction)
         
         if ai_reply:
             return "AI_RESPONSE", ai_reply
