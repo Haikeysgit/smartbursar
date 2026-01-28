@@ -4,6 +4,7 @@ SmartBursar - Main Application Entry Point
 =============================================================================
 """
 import os
+import sys
 import logging
 from datetime import date
 
@@ -22,7 +23,26 @@ from services.whatsapp_agent.whatsapp_client import whatsapp_client
 from services.whatsapp_agent.webhook_handler import router as webhook_router
 
 load_dotenv()
+
+# =============================================================================
+# Explicit Logging Configuration (REQUIRED for Render)
+# =============================================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+# Force all loggers to use the same config
+logging.getLogger().handlers = [logging.StreamHandler(sys.stdout)]
+for name in ['services', 'services.whatsapp_agent', 'services.ocr', 'services.llm']:
+    log = logging.getLogger(name)
+    log.setLevel(logging.INFO)
+    log.handlers = [logging.StreamHandler(sys.stdout)]
+
 logger = logging.getLogger(__name__)
+logger.info("SmartBursar starting - logging configured")
 
 # =============================================================================
 # App Setup
