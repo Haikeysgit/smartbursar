@@ -62,6 +62,14 @@ with tab1:
     st.header("Recent Transactions")
     
     with Session(engine) as db:
+        # --- ALERT BAR LOGIC ---
+        pending_txns = db.query(Transaction).filter(Transaction.status == TransactionStatus.PENDING).count()
+        if pending_txns > 0:
+            st.warning(f"🔔 ACTION REQUIRED: You have {pending_txns} pending payment(s) to review!", icon="⚠️")
+        else:
+            st.success("All caught up! No pending payments.", icon="✅")
+        # -----------------------
+
         txns = db.query(Transaction).order_by(desc(Transaction.created_at)).limit(50).all()
         
         if not txns:
