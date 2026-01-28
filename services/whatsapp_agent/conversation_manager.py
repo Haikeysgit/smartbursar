@@ -34,11 +34,11 @@ class BotConversationManager:
         
         # 1. WANT TO PAY
         # =================================================================
-        # FULL AI MODE: Let Groq handle ALL conversations naturally
+        # FULL AI MODE: Let Gemini handle ALL conversations naturally
         # =================================================================
-        logger.info(f"Routing '{text}' to Groq AI for natural language processing")
+        logger.info(f"Routing '{text}' to Gemini AI for natural language processing")
         
-        from services.llm.groq_client import groq_client
+        from services.llm.gemini_client import gemini_client
         
         # Prepare rich context for AI
         students = context.get("students", [])
@@ -79,14 +79,17 @@ If they ask about:
 
 Respond naturally and helpfully. Keep it concise (2-3 sentences max)."""
         
-        # Generate AI response with Groq
-        ai_reply = groq_client.generate_message(ai_context, tone="helpful", custom_prompt=system_instruction)
-        
-        if ai_reply:
-            return "AI_RESPONSE", ai_reply
+        # Generate AI response with Gemini
+        # Check if active first to prevent crashing
+        if gemini_client.is_active:
+             ai_reply = gemini_client.generate_message(ai_context, tone="helpful", custom_prompt=system_instruction)
+             if ai_reply:
+                 return "AI_RESPONSE", ai_reply
         
         # Ultimate fallback if AI completely fails
-        return "SEND_GREETING", f"👋 Hi {sender_name}, I'm having trouble with my AI. Please try again or contact the school admin."
+        return "SEND_GREETING", f"👋 Hi {sender_name}, my automated brain is offline momentarily. Please contact the school admin."
+        
+
 
     def safe_analyze_intent(self, text, sender, context, name):
         """Wrapper to prevent silence on crash."""
