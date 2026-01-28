@@ -187,11 +187,11 @@ def bootstrap_admin():
             # Create Super Admin
             admin = User(
                 email="admin@school.com",
-                hashed_password=pwd_context.hash("password123"),
                 role="SUPER_ADMIN",
                 school_id=school.id,
                 is_active=True
             )
+            admin.set_password("password123")  # Use model method for correct bcrypt hashing
             db.add(admin)
             db.commit()
             return True
