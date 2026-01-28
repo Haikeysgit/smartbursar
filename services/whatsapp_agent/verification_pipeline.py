@@ -151,13 +151,32 @@ class VerificationPipeline:
                  return {"success": False}
                  
             # --- LAYER 1: PERFECT MATCH (Beneficiary) ---
-            # school_name vs extracted['beneficiary_name']
-            extracted_beneficiary = extraction.get("beneficiary_name", "").lower()
-            school_name_key = school.school_name.lower().split()[0] # e.g. "SmartBursar"
+            # school_name vs extracted['beneficiary_name'] AND extracted['sender_name'] (sometimes sender/receiver swapped in OCR)
+            # Also check school.account_name!
+            
+            raw_beneficiary = extraction.get("beneficiary_name") or ""
+            raw_sender = extraction.get("sender_name") or ""  # Sometimes OCR swaps them
+            
+            extracted_beneficiary = str(raw_beneficiary).lower()
+            extracted_sender = str(raw_sender).lower()
+            
+            school_name_key = school.school_name.lower().split()[0]
+            account_name_key = school.account_name.lower() if school.account_name else ""
             
             is_perfect_match = False
+            
+            # Check 1: School Name in Beneficiary
             if school_name_key in extracted_beneficiary:
                 is_perfect_match = True
+                
+            # Check 2: Account Name in Beneficiary (Robust check)
+            elif account_name_key and account_name_key in extracted_beneficiary:
+                is_perfect_match = True
+                
+            # Check 3: Account Name in Sender (OCR swap edge case)
+            elif account_name_key and account_name_key in extracted_sender:
+                is_perfect_match = True
+                logger.info("PIPELINE: Match found in sender_name (OCR swap detected)")
                 
             # --- LAYER 2: CONTEXT MATCH (Amount + Parent) ---
             # Parent is already valid (Gatekeeper). Check Amount.
