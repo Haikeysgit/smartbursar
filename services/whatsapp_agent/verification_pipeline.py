@@ -258,9 +258,15 @@ class VerificationPipeline:
                         f"New Balance: ₦{transaction.balance_after:,.2f}"
                     )
                     
+
+                    # Construct Public URL
+                    from config.settings import settings
+                    app_url = settings.APP_URL.rstrip("/")
+                    pdf_url = f"{app_url}/receipts/{pdf_filename}"
+                    
                     whatsapp_client.send_document(
                         parent_phone,
-                        str(pdf_path),
+                        pdf_url,
                         filename=pdf_filename,
                         caption=f"🧾 Receipt {receipt_num}"
                     )
