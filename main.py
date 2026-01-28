@@ -181,16 +181,17 @@ def seed_test_data():
         
         # Create school if not exists
         if not existing_school:
+            from datetime import timedelta
             school = School(
                 school_name="SmartBursar Demo School",
                 school_code="TEST001",
                 bank_name="OPay",
-                account_number="8038004334",  # Your phone as account
-                account_name="IMISIOLUWA FAITH OBASEKI",  # From receipt
+                account_number="8038004334",
+                account_name="IMISIOLUWA FAITH OBASEKI",
                 phone="+2348038004334",
-                email="demo@smartbursar.com",
                 address="Lagos, Nigeria",
-                is_active=True
+                subscription_end_date=datetime.now().date() + timedelta(days=365),
+                status="ACTIVE"
             )
             db.add(school)
             db.commit()
