@@ -146,6 +146,93 @@ def debug_gemini():
         }
 
 
+@app.get("/seed-test-data")
+def seed_test_data():
+    """
+    Create test school and student for testing.
+    Links student to phone: +2348038004334
+    """
+    from decimal import Decimal
+    from datetime import datetime, timedelta
+    from models.school import School
+    from models.student import Student
+    
+    db = SessionLocal()
+    try:
+        # Check if school exists
+        existing_school = db.query(School).filter(School.school_code == "TEST001").first()
+        
+        if existing_school:
+            # Check if student exists
+            existing_student = db.query(Student).filter(
+                Student.school_id == existing_school.id,
+                Student.parent_phone_primary == "+2348038004334"
+            ).first()
+            
+            if existing_student:
+                return {
+                    "status": "already_exists",
+                    "school_id": existing_school.id,
+                    "school_name": existing_school.school_name,
+                    "student_id": existing_student.id,
+                    "student_name": existing_student.full_name,
+                    "parent_phone": existing_student.parent_phone_primary
+                }
+        
+        # Create school if not exists
+        if not existing_school:
+            school = School(
+                school_name="SmartBursar Demo School",
+                school_code="TEST001",
+                bank_name="OPay",
+                account_number="8038004334",  # Your phone as account
+                account_name="IMISIOLUWA FAITH OBASEKI",  # From receipt
+                phone="+2348038004334",
+                email="demo@smartbursar.com",
+                address="Lagos, Nigeria",
+                is_active=True
+            )
+            db.add(school)
+            db.commit()
+            db.refresh(school)
+        else:
+            school = existing_school
+        
+        # Create student linked to your phone
+        student = Student(
+            full_name="Test Student (Demo)",
+            class_level="JSS 1",
+            parent_name="Demo Parent",
+            parent_phone_primary="+2348038004334",
+            parent_email="parent@demo.com",
+            school_id=school.id,
+            fees_total_due=Decimal("50000.00"),
+            amount_paid=Decimal("0.00"),
+            payment_due_date=datetime.now() + timedelta(days=30)
+        )
+        db.add(student)
+        db.commit()
+        db.refresh(student)
+        
+        return {
+            "status": "created",
+            "school_id": school.id,
+            "school_name": school.school_name,
+            "student_id": student.id,
+            "student_name": student.full_name,
+            "parent_phone": student.parent_phone_primary,
+            "fees_due": str(student.fees_total_due),
+            "message": "Test data created! Now send a receipt via WhatsApp to test."
+        }
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Seed error: {e}")
+        return {"status": "error", "error": str(e)}
+    finally:
+        db.close()
+
+
 # =============================================================================
 # Admin Endpoints (Moved from webhook_handler.py)
 # =============================================================================
