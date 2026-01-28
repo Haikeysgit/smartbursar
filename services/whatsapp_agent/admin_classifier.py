@@ -60,7 +60,7 @@ class AdminClassifier:
             }
             
             payload = {
-                "model": "llama3-8b-8192",  # Fast model for classification
+                "model": "llama-3.1-8b-instant",  # Fast production model
                 "messages": [
                     {"role": "system", "content": self.SYSTEM_PROMPT},
                     {"role": "user", "content": f"Admin says: '{admin_reply}'"}

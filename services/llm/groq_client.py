@@ -25,7 +25,7 @@ class GroqClient:
     
     def __init__(self):
         self.api_key = os.getenv("GROQ_API_KEY")
-        self.model = "llama3-70b-8192"  # Correct Groq model name
+        self.model = "llama-3.3-70b-versatile"  # Groq production model
         
         if self.api_key:
             logger.info("Groq AI Client initialized successfully")
@@ -119,7 +119,7 @@ Keep it brief (2-3 sentences), friendly, and mention their specific balance."""
             }
             
             payload = {
-                "model": "llama3-8b-8192",  # Faster model for classification
+                "model": "llama-3.1-8b-instant",  # Fast production model
                 "messages": [
                     {"role": "system", "content": """Classify the user's intent. Return ONLY one of these categories:
 - CHECK_BALANCE: User wants to know how much they owe
