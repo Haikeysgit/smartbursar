@@ -234,12 +234,16 @@ def generate_reminder_message(
     
     # Try AI generation
     if gemini_client.is_active:
-        ai_message = gemini_client.generate_message(context, tone)
-        if ai_message:
-            # Add exam barring warning for Phase 2
-            if phase == "PHASE_2" and "exam" not in ai_message.lower():
-                ai_message += "\n\n⚠️ Please note: Outstanding fees may affect exam participation."
-            return ai_message
+        try:
+            ai_message = gemini_client.generate_message(context, tone)
+            if ai_message:
+                # Add exam barring warning for Phase 2
+                if phase == "PHASE_2" and "exam" not in ai_message.lower():
+                    ai_message += "\n\n⚠️ Please note: Outstanding fees may affect exam participation."
+                return ai_message
+        except Exception as e:
+            # Log error but fallback gracefully
+            print(f"[WARNING] Gemini generation failed: {e}")
     
     # Fallback to template
     return _get_fallback_template(context, tone, phase)
