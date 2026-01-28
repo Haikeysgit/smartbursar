@@ -28,15 +28,21 @@ class GroqClient:
         self.model = "llama-3.3-70b-versatile"  # Groq production model
         
         if self.api_key:
-            logger.info("Groq AI Client initialized successfully")
+            logger.info("Groq AI Client initialized successfully (Llama 3)")
         else:
             logger.warning("GROQ_API_KEY not found. AI features disabled.")
     
+    @property
+    def is_active(self) -> bool:
+        """Check if client is initialized."""
+        return bool(self.api_key)
+
     def generate_message(self, context: Dict[str, Any], tone: str = "polite", custom_prompt: str = None) -> Optional[str]:
         """
         Generate a response using Groq's Llama model.
         """
-        if not self.api_key:
+        if not self.is_active:
+            logger.warning("Groq generate_message skipped: API key missing")
             return None
         
         try:
