@@ -161,14 +161,13 @@ def get_logo_base64():
 # =============================================================================
 
 def bootstrap_admin():
-    """Auto-create or reset default admin."""
+    """Auto-create or reset default admin & ABC school."""
     with get_db_context() as db:
-        # ALWAYS check for admin user, don't rely on count
+        # 1. SUPER ADMIN (admin@school.com)
         admin = db.query(User).filter(User.email == "admin@school.com").first()
-        
         if not admin:
-            # Create Dummy School if needed
-            school = db.query(School).first()
+            # Ensure Dummy School exists for context (though Super Admin isn't tied to it)
+            school = db.query(School).filter(School.email == "test@smartbursar.com").first()
             if not school:
                 school = School(
                     name="SmartBursar Academy",
@@ -183,7 +182,6 @@ def bootstrap_admin():
                 db.commit()
                 db.refresh(school)
             
-            # Create New Admin
             admin = User(
                 email="admin@school.com",
                 role="SUPER_ADMIN",
@@ -192,11 +190,43 @@ def bootstrap_admin():
             )
             admin.set_password("password123")
             db.add(admin)
-            print("Status: Created New Admin")
+            print("Status: Created Super Admin")
         else:
-            # FORCE RESET PASSWORD
             admin.set_password("password123")
-            print("Status: Reset Admin Password")
+            print("Status: Reset Super Admin Password")
+        
+        # 2. ABC SCHOOL ADMIN (For 'that abc school login')
+        abc_school = db.query(School).filter(School.school_code == "ABC").first()
+        if not abc_school:
+            abc_school = School(
+                school_code="ABC",
+                name="ABC Primary & Secondary School",  # Formal Name
+                school_name="ABC Primary & Secondary School", # Display Name
+                email="info@abcschool.com",
+                address="123 Education Lane",
+                password_hash="hashed",
+                account_number="0123456789",
+                bank_name="GTBank"
+            )
+            db.add(abc_school)
+            db.commit()
+            db.refresh(abc_school)
+            print("Status: Created ABC School")
+            
+        abc_admin = db.query(User).filter(User.email == "admin@abcschool.com").first()
+        if not abc_admin:
+            abc_admin = User(
+                email="admin@abcschool.com",
+                role="SCHOOL_ADMIN",
+                school_id=abc_school.id,
+                is_active=True
+            )
+            abc_admin.set_password("school123")
+            db.add(abc_admin)
+            print("Status: Created ABC School Admin")
+        else:
+            abc_admin.set_password("school123")
+            print("Status: Reset ABC School Admin Password")
             
         db.commit()
         return True
