@@ -263,6 +263,54 @@ def trigger_daily_tasks(db: Session = Depends(get_db)):
 # Admin Endpoints (Moved from webhook_handler.py)
 # =============================================================================
 
+
+# =============================================================================
+# Reminder Tests
+# =============================================================================
+
+@app.get("/test-all-reminders")
+def test_all_reminders(db: Session = Depends(get_db)):
+    """
+    Simulate sending ALL 3 types of reminders to the Test Student.
+    1. Phase 1 (Polite)
+    2. Phase 2 (Strict)
+    3. Exam Mode (Barring Warning)
+    """
+    try:
+        from services.scheduler.reminder_engine import generate_reminder_message
+        from services.messaging.mock_sender import get_message_sender
+        from models.student import Student
+        
+        # Find test student
+        student = db.query(Student).filter(Student.parent_phone_primary == "+2348038004334").first()
+        if not student:
+            return {"success": False, "error": "Test student not found. Run /seed-test-data first."}
+            
+        school = student.school
+        sender = get_message_sender(db)
+        results = []
+        
+        # 1. Phase 1
+        msg1 = generate_reminder_message(student, school, phase="PHASE_1")
+        sender.send_whatsapp(student.parent_phone_primary, "--- [TEST 1: POLITE/RESUMPTION] ---\n" + msg1, student.id, school.id)
+        results.append("Sent Phase 1")
+        
+        # 2. Phase 2
+        msg2 = generate_reminder_message(student, school, phase="PHASE_2")
+        sender.send_whatsapp(student.parent_phone_primary, "--- [TEST 2: STRICT/MID-TERM] ---\n" + msg2, student.id, school.id)
+        results.append("Sent Phase 2")
+        
+        # 3. Exam Mode (Simulated by Strict + Exam Text)
+        msg3 = "🎓 *Exam Week Alert*\nExams start Monday. Please clear all outstanding dues to obtain exam pass."
+        sender.send_whatsapp(student.parent_phone_primary, "--- [TEST 3: EXAM MODE] ---\n" + msg3, student.id, school.id)
+        results.append("Sent Exam Mode")
+        
+        return {"success": True, "results": results}
+        
+    except Exception as e:
+        logger.error(f"Test failed: {e}")
+        return {"success": False, "error": str(e)}
+
 @app.post("/admin/trigger-test")
 async def admin_trigger_test(
     phone: str = Query(..., description="Target phone number"),
