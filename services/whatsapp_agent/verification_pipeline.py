@@ -263,6 +263,7 @@ class VerificationPipeline:
                     whatsapp_client.send_document(
                         parent_phone,
                         str(pdf_path),
+                        filename=pdf_filename,
                         caption=f"🧾 Receipt {receipt_num}"
                     )
                     
@@ -305,6 +306,7 @@ class VerificationPipeline:
                     whatsapp_client.send_document(
                         admin_phone,
                         file_path,
+                        filename="receipt_proof.jpg",
                         caption="📎 Proof of Payment"
                     )
                     
