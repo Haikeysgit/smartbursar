@@ -80,6 +80,11 @@ def startup_event():
     try:
         logger.info("Checking database schema...")
         init_db()
+        
+        # Validate Env Integrity
+        from utils.config_validator import validate_environment
+        validate_environment()
+        
         logger.info("Database schema check complete.")
     except Exception as e:
         logger.critical(f"Failed to initialize database: {e}")
