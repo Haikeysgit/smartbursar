@@ -185,8 +185,8 @@ def seed_test_data():
             school = School(
                 school_name="SmartBursar Demo School",
                 school_code="TEST001",
-                bank_name="OPay",
-                account_number="8038004334",
+                bank_name="Wema Bank",
+                account_number="0247848373",
                 account_name="IMISIOLUWA FAITH OBASEKI",
                 phone="+2348038004334",
                 address="Lagos, Nigeria",
