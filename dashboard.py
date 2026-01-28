@@ -82,9 +82,10 @@ with tab1:
                     "Date": t.created_at,
                     "Student": t.student.full_name if t.student else "Unknown",
                     "Amount": f"₦{t.amount:,.2f}",
-                    "Status": t.status.value,
-                    "Confidence": f"{t.confidence_score}%",
-                    "Method": t.payment_method.value
+                    "Amount": f"₦{t.amount:,.2f}",
+                    "Status": t.status,
+                    "Confidence": f"{t.confidence_score if hasattr(t, 'confidence_score') else 0}%",
+                    "Method": t.method
                 })
             
             df = pd.DataFrame(data)
