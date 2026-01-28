@@ -8,14 +8,15 @@ import sys
 import logging
 from datetime import date
 
-from fastapi import FastAPI, Query, HTTPException, Form
+from fastapi import FastAPI, Query, HTTPException, Form, Depends
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 
-from config.database import get_db_context, init_db, SessionLocal
+from config.database import get_db_context, init_db, SessionLocal, get_db
+from sqlalchemy.orm import Session
 from models.student import Student
 from models.school import School
 from services.whatsapp_agent.whatsapp_client import whatsapp_client
