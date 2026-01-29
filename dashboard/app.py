@@ -173,7 +173,7 @@ def bootstrap_admin():
             if not school:
                 school = School(
                     school_code="SB-ADMIN", # Need a code
-                    name="SmartBursar Academy",
+                    # name removed - invalid field
                     school_name="SmartBursar Academy",
                     # email removed - not in model
                     address="123 Test St",
@@ -203,7 +203,7 @@ def bootstrap_admin():
         if not abc_school:
             abc_school = School(
                 school_code="ABC",
-                name="ABC Primary & Secondary School",  # Formal Name
+                # name removed - invalid field
                 school_name="ABC Primary & Secondary School", # Display Name
                 # email removed - not in model
                 address="123 Education Lane",
