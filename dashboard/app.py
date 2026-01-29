@@ -168,12 +168,14 @@ def bootstrap_admin():
         admin = db.query(User).filter(User.email == "admin@school.com").first()
         if not admin:
             # Ensure Dummy School exists for context (though Super Admin isn't tied to it)
-            school = db.query(School).filter(School.email == "test@smartbursar.com").first()
+            # FIX: School model has no 'email' field, use 'school_name' instead
+            school = db.query(School).filter(School.school_name == "SmartBursar Academy").first()
             if not school:
                 school = School(
+                    school_code="SB-ADMIN", # Need a code
                     name="SmartBursar Academy",
                     school_name="SmartBursar Academy",
-                    email="test@smartbursar.com",
+                    # email removed - not in model
                     address="123 Test St",
                     password_hash="hashed",
                     account_number="0000000000",
@@ -203,7 +205,7 @@ def bootstrap_admin():
                 school_code="ABC",
                 name="ABC Primary & Secondary School",  # Formal Name
                 school_name="ABC Primary & Secondary School", # Display Name
-                email="info@abcschool.com",
+                # email removed - not in model
                 address="123 Education Lane",
                 password_hash="hashed",
                 account_number="0123456789",
