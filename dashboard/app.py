@@ -195,8 +195,8 @@ def bootstrap_admin():
             db.add(admin)
             print("Status: Created Super Admin")
         else:
-            admin.set_password("password123")
-            print("Status: Reset Super Admin Password")
+            # Removed forced reset to allow personal password changes
+            pass
         
         # 2. ABC SCHOOL ADMIN (For 'that abc school login')
         abc_school = db.query(School).filter(School.school_code == "ABC").first()
@@ -228,8 +228,8 @@ def bootstrap_admin():
             db.add(abc_admin)
             print("Status: Created ABC School Admin")
         else:
-            abc_admin.set_password("school123")
-            print("Status: Reset ABC School Admin Password")
+            # Removed forced reset to allow personal password changes
+            pass
             
         db.commit()
         return True
@@ -411,15 +411,11 @@ if "role" not in st.session_state:
             submit = st.form_submit_button("Sign In", use_container_width=True)
             
             if submit:
-                # EMERGENCY: Force refresh credentials on every login attempt to fix lockout
+                # Run bootstrap lightly (only creates if missing)
                 try:
-                    if bootstrap_admin():
-                        st.toast("Credentials Refreshed", icon="🔐")
-                except Exception as e:
-                    import traceback
-                    err = traceback.format_exc()
-                    st.error(f"⚠️ BOOTSTRAP FAILED: {str(e)}")
-                    st.error(f"Details: {err}") # START DEBUGGING MODE
+                     bootstrap_admin()
+                except Exception:
+                    pass  # Fail silent now that it works
 
                 # SECURITY: Rate limiting to prevent brute force attacks
                 from datetime import datetime, timedelta
@@ -468,34 +464,6 @@ if "role" not in st.session_state:
                             remaining = 5 - st.session_state["login_attempts"]
                             st.error(f"Invalid email or password. {remaining} attempts remaining.")
 
-        # --- DEBUG SECTION (REMOVE AFTER FIX) ---
-        with st.expander("🛠️ Connection Debugger (Click if stuck)"):
-            try:
-                st.write(f"Env: {os.getenv('ENVIRONMENT', 'dev')}")
-                st.write(f"DB URL Set: {'Yes' if os.getenv('DATABASE_URL') else 'NO'}")
-                
-                with get_db_context() as db:
-                    u_count = db.query(User).count()
-                    st.write(f" Users in DB: {u_count}")
-                    
-                    target = db.query(User).filter(User.email == "admin@abcschool.com").first()
-                    if target:
-                        st.write("✅ User 'admin@abcschool.com' FOUND")
-                        st.write(f"   Role: {target.role}")
-                        is_valid = target.check_password("school123")
-                        st.write(f"   Password 'school123' Valid: {is_valid}")
-                    else:
-                        st.error("❌ User 'admin@abcschool.com' NOT FOUND")
-
-                    target_super = db.query(User).filter(User.email == "admin@school.com").first()
-                    if target_super:
-                         st.write("✅ User 'admin@school.com' FOUND")
-                         is_valid_super = target_super.check_password("password123")
-                         st.write(f"   Password 'password123' Valid: {is_valid_super}")
-            except Exception as e:
-                st.error(f"DB Connection Failed: {e}")
-        # ----------------------------------------
-        
         # Contact Info (no credentials shown for security)
         st.markdown("""
         <div style="
