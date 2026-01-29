@@ -10,7 +10,7 @@ import base64
 import json
 import os
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -172,14 +172,14 @@ def bootstrap_admin():
             school = db.query(School).filter(School.school_name == "SmartBursar Academy").first()
             if not school:
                 school = School(
-                    school_code="SB-ADMIN", # Need a code
-                    # name removed - invalid field
+                    school_code="SB-ADMIN",
                     school_name="SmartBursar Academy",
-                    # email removed - not in model
                     address="123 Test St",
-                    password_hash="hashed",
+                    phone="08012345678", # Required field
                     account_number="0000000000",
-                    bank_name="Test Bank"
+                    bank_name="Test Bank",
+                    account_name="SmartBursar Academy", # Required field
+                    subscription_end_date=date.today() + timedelta(days=365) # Required field
                 )
                 db.add(school)
                 db.commit()
@@ -203,13 +203,13 @@ def bootstrap_admin():
         if not abc_school:
             abc_school = School(
                 school_code="ABC",
-                # name removed - invalid field
-                school_name="ABC Primary & Secondary School", # Display Name
-                # email removed - not in model
+                school_name="ABC Primary & Secondary School",
                 address="123 Education Lane",
-                password_hash="hashed",
+                phone="08098765432", # Required field
                 account_number="0123456789",
-                bank_name="GTBank"
+                bank_name="GTBank",
+                account_name="ABC Primary School", # Required field
+                subscription_end_date=date.today() + timedelta(days=365) # Required field
             )
             db.add(abc_school)
             db.commit()
