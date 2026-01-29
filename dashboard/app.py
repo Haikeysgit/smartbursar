@@ -479,11 +479,44 @@ if "role" not in st.session_state:
         </div>
         """, unsafe_allow_html=True)
         
-        # Footer note
+        # Legal Footer (Meta Verification Compliant)
         st.markdown("""
-        <p style="text-align: center; color: #8888a8; font-size: 0.8rem; margin-top: 1.5rem;">
-            Standard License covers recovery for up to 150 Debtors per term.
-        </p>
+        <div style="
+            text-align: center;
+            margin-top: 3rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            color: #888888;
+            font-size: 0.75rem;
+            font-family: sans-serif;
+        ">
+            <p style="margin-bottom: 0.5rem;">
+                © 2026 SMARTBURS TECHNOLOGIES. All Rights Reserved.
+            </p>
+            <div style="
+                display: flex; 
+                justify-content: center; 
+                gap: 1.5rem; 
+                margin-bottom: 0.5rem;
+            ">
+                <a href="#" style="color: #888888; text-decoration: none; transition: color 0.3s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888888'">Privacy Policy</a>
+                <span style="color: #444;">|</span>
+                <a href="#" style="color: #888888; text-decoration: none; transition: color 0.3s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888888'">Terms of Use</a>
+            </div>
+            <div style="
+                display: flex; 
+                justify-content: center; 
+                gap: 1rem;
+                align-items: center;
+            ">
+                <a href="https://twitter.com/smartbursar" target="_blank" style="color: #888888; text-decoration: none; font-size: 1.1rem; transition: color 0.3s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888888'">
+                    𝕏
+                </a>
+                <a href="mailto:support@smartbursar.com" style="color: #888888; text-decoration: none; transition: color 0.3s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888888'">
+                    Contact Support
+                </a>
+            </div>
+        </div>
         """, unsafe_allow_html=True)
 
 
