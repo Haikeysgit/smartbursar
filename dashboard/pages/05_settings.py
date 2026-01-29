@@ -210,15 +210,17 @@ with get_db_context() as db:
         with col3:
             st.metric("Total Outstanding", f"₦{int(total_outstanding):,}")
         
-        with st.form("new_term_form"):
+        with st.container():
             st.markdown("**New Term Details**")
             
             c1, c2 = st.columns(2)
             with c1:
+                # Default logic: if avg_fee > 0 use it, else default to 0 (USER REQ)
+                default_fee = int(avg_fee) if avg_fee > 0 else 0
                 new_term_fee = st.number_input(
                     "New Term Fee (₦)",
                     min_value=0,
-                    value=int(avg_fee) if avg_fee > 0 else 150000,
+                    value=default_fee,
                     step=5000,
                     help="This amount will be ADDED to each student's current balance."
                 )
@@ -238,13 +240,13 @@ with get_db_context() as db:
             with c3:
                 new_exam_date = st.date_input("Exam Date", value=date.today() + timedelta(days=84))
             
-            # Confirmation checkbox
+            # Confirmation checkbox (Outside form so it updates dynamically)
             confirm = st.checkbox(
                 f"I confirm I want to add ₦{new_term_fee:,} to ALL {student_count} students' balances",
                 value=False
             )
             
-            if st.form_submit_button("Start New Term", type="primary", use_container_width=True):
+            if st.button("Start New Term", type="primary", use_container_width=True):
                 if not confirm:
                     st.error("Please check the confirmation box to proceed.")
                 elif student_count == 0:

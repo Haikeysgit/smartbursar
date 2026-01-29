@@ -158,7 +158,7 @@ with tab1:
         }
     
     # Search filter for quick lookup
-    search_query = st.text_input("🔍 Search student by name or class", placeholder="Type to filter...")
+    search_query = st.text_input("Search student by name or class", placeholder="Type to filter...")
     
     # Filter options based on search
     if search_query:
