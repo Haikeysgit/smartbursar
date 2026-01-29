@@ -147,7 +147,7 @@ st.markdown("---")
 # Tabs
 # =============================================================================
 
-tab1, tab2, tab3 = st.tabs(["Schools", "Import Students", "Add School"])
+tab1, tab2, tab3, tab4 = st.tabs(["Schools", "Import Students", "Add School", "My Profile"])
 
 
 # =============================================================================
@@ -496,3 +496,67 @@ with tab3:
                             st.rerun()
                 except Exception as e:
                     st.error(f"Error creating school: {e}")
+
+# =============================================================================
+# Tab 4: My Profile
+# =============================================================================
+
+with tab4:
+    st.subheader("My Profile")
+    st.info("Update your login credentials here. You will be logged out after saving changes.")
+    
+    current_email = st.session_state.get("email", "admin@school.com")
+    
+    with st.form("profile_update"):
+        st.markdown("**Update Credentials**")
+        
+        new_email = st.text_input("New Email", value=current_email)
+        new_password = st.text_input("New Password (leave empty to keep current)", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
+        
+        st.markdown("---")
+        st.markdown("**Verification**")
+        current_password_check = st.text_input("Current Password (required)", type="password")
+        
+        if st.form_submit_button("Update Profile", type="primary", use_container_width=True):
+            if not current_password_check:
+                st.error("Please enter your current password to confirm changes.")
+            elif new_password and (new_password != confirm_password):
+                st.error("New passwords do not match.")
+            elif new_password and len(new_password) < 6:
+                st.error("New password must be at least 6 characters.")
+            elif "@" not in new_email or "." not in new_email:
+                st.error("Invalid email format.")
+            else:
+                try:
+                    with get_db_context() as db:
+                        # Verify current password
+                        user_id = st.session_state.get("user_id")
+                        user = db.query(User).filter(User.id == user_id).first()
+                        
+                        if not user or not user.check_password(current_password_check):
+                            st.error("Incorrect current password.")
+                        else:
+                            # Update fields
+                            changes_made = False
+                            
+                            if new_email != user.email:
+                                user.email = new_email
+                                changes_made = True
+                                
+                            if new_password:
+                                user.set_password(new_password)
+                                changes_made = True
+                            
+                            if changes_made:
+                                db.commit()
+                                st.success("Profile updated successfully! Please login again.")
+                                # Clear session
+                                for key in list(st.session_state.keys()):
+                                    del st.session_state[key]
+                                st.rerun()
+                            else:
+                                st.info("No changes detected.")
+                                
+                except Exception as e:
+                    st.error(f"Error updating profile: {str(e)}")
