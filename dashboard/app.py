@@ -509,10 +509,10 @@ if "role" not in st.session_state:
                 gap: 1rem;
                 align-items: center;
             ">
-                <a href="https://twitter.com/smartbursar" target="_blank" style="color: #888888; text-decoration: none; font-size: 1.1rem; transition: color 0.3s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888888'">
+                <a href="https://x.com/smartbursar" target="_blank" style="color: #888888; text-decoration: none; font-size: 1.1rem; transition: color 0.3s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888888'">
                     𝕏
                 </a>
-                <a href="mailto:support@smartbursar.com" style="color: #888888; text-decoration: none; transition: color 0.3s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888888'">
+                <a href="mailto:smartbursar@gmail.com" style="color: #888888; text-decoration: none; transition: color 0.3s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888888'">
                     Contact Support
                 </a>
             </div>
