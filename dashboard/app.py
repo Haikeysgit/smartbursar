@@ -708,7 +708,7 @@ else:
                     FROM students 
                     WHERE school_id = :school_id 
                     AND amount_paid > fees_total_due 
-                    AND (refund_processed IS NULL OR refund_processed = 0)
+                    AND (refund_processed IS NULL OR refund_processed = FALSE)
                 """), {"school_id": school_id})
                 
                 overpaid_data = []
@@ -733,7 +733,7 @@ else:
                             with get_db_context() as db:
                                 # Set refund_processed AND reset amount_paid to match fees_total_due
                                 db.execute(
-                                    text("UPDATE students SET refund_processed = 1, amount_paid = fees_total_due WHERE id = :sid"),
+                                    text("UPDATE students SET refund_processed = TRUE, amount_paid = fees_total_due WHERE id = :sid"),
                                     {"sid": s['id']}
                                 )
                                 db.commit()
