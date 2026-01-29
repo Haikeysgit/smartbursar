@@ -414,7 +414,10 @@ if "role" not in st.session_state:
                     if bootstrap_admin():
                         st.toast("Credentials Refreshed", icon="🔐")
                 except Exception as e:
-                    print(f"Bootstrap Warning: {e}")
+                    import traceback
+                    err = traceback.format_exc()
+                    st.error(f"⚠️ BOOTSTRAP FAILED: {str(e)}")
+                    st.error(f"Details: {err}") # START DEBUGGING MODE
 
                 # SECURITY: Rate limiting to prevent brute force attacks
                 from datetime import datetime, timedelta
