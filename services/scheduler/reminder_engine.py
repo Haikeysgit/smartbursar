@@ -141,16 +141,23 @@ def get_phase_tone(phase: str) -> str:
 # Schedule Checking (Day of Week Logic)
 # =============================================================================
 
-def should_send_today(school: School) -> bool:
+def should_send_today(school: School, force: bool = False) -> bool:
     """
     Check if reminders should be sent today based on phase schedule.
     
     Phase 1 (Before Mid-Term): Mondays only
     Phase 2 (After Mid-Term): Mondays and Thursdays
     
+    Args:
+        school: School to check
+        force: If True, bypass day-of-week checks (for manual triggers)
+    
     Returns:
         True if should send today, False otherwise
     """
+    if force:
+        return True
+
     phase = get_current_phase(school)
     
     # No messaging during grace period or exams
@@ -272,7 +279,7 @@ def _get_fallback_template(context: dict, tone: str, phase: str) -> str:
 # Core Scheduler
 # =============================================================================
 
-def run_reminder_cycle(db: Session) -> dict:
+def run_reminder_cycle(db: Session, force: bool = False) -> dict:
     """
     Run one cycle of the reminder scheduler.
     
@@ -283,6 +290,7 @@ def run_reminder_cycle(db: Session) -> dict:
     
     Args:
         db: Database session
+        force: If True, bypass day-of-week and time checks
     
     Returns:
         Summary dict with counts
@@ -326,12 +334,12 @@ def run_reminder_cycle(db: Session) -> dict:
             stats["grace_period_schools"] += 1
             continue
         
-        if phase == "EXAMS_STARTED":
+        if phase == "EXAMS_STARTED" and not force:
             print(f"[SKIP] {school.school_name} - Exams started (messaging paused)")
             continue
         
         # Check if should send today (day of week)
-        if not should_send_today(school):
+        if not should_send_today(school, force=force):
             day_name = get_today_wat().strftime("%A")
             print(f"[SKIP] {school.school_name} - {phase}, not a messaging day ({day_name})")
             continue

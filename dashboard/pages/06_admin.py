@@ -57,7 +57,25 @@ check_access()
 st.title("Admin Panel")
 st.caption("SmartBursar Platform Administration")
 
-st.markdown("---")
+# --- Emergency Controls ---
+with st.expander("Emergency & Scheduler Controls", expanded=True):
+    st.info("Use these controls to force-run automated tasks or recover from delivery failures.")
+    cols = st.columns(2)
+    with cols[0]:
+        if st.button("Run Daily Batch (Force Run)", use_container_width=True, type="primary"):
+            from services.scheduler.reminder_engine import run_reminder_cycle
+            with get_db_context() as db_scheduler:
+                with st.spinner("Processing schools and students..."):
+                    # Force run to bypass day-of-week checks
+                    stats = run_reminder_cycle(db_scheduler, force=True)
+                    st.success(f"Batch completed! {stats['reminders_sent']} reminders sent.")
+                    st.json(stats)
+    with cols[1]:
+        if st.button("Reset Daily Counters", use_container_width=True):
+            from services.scheduler.reminder_engine import reset_daily_counters
+            with get_db_context() as db_reset:
+                count = reset_daily_counters(db_reset)
+                st.success(f"Daily message counters reset for {count} schools.")
 
 
 # =============================================================================
@@ -100,33 +118,6 @@ with col2:
     st.metric("Active Schools", f"{active}")
 with col3:
     st.metric("Total Students", f"{total_students}")
-
-st.markdown("---")
-
-# =============================================================================
-# Emergency & Scheduler Controls
-# =============================================================================
-
-with st.expander("🚨 Emergency & Scheduler Controls", expanded=True):
-    st.info("Use these controls to force-run automated tasks or recover from delivery failures.")
-    cols = st.columns(2)
-    with cols[0]:
-        if st.button("🚀 Run Daily Batch (7AM Cycle)", use_container_width=True, type="primary"):
-            from services.scheduler.reminder_engine import run_reminder_cycle
-            with get_db_context() as db_scheduler:
-                with st.spinner("Processing schools and students..."):
-                    stats = run_reminder_cycle(db_scheduler)
-                    st.success(f"Batch completed! {stats['reminders_sent']} reminders sent.")
-                    st.json(stats)
-    with cols[1]:
-        if st.button("🔄 Reset Daily Counters", use_container_width=True):
-            from services.scheduler.reminder_engine import reset_daily_counters
-            with get_db_context() as db_reset:
-                count = reset_daily_counters(db_reset)
-                st.success(f"Daily message counters reset for {count} schools.")
-
-st.markdown("---")
-
 with col4:
     st.metric("Expiring Soon", f"{expiring}")
 with col5:
@@ -166,8 +157,7 @@ with get_db_context() as db:
                 st.markdown(f'<a href="{wa_link}" target="_blank" style="display:inline-block;background:#25D366;color:white;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:600;">WhatsApp</a>', unsafe_allow_html=True)
             with col3:
                 st.caption(school.phone)
-
-st.markdown("---")
+    st.markdown("---")
 
 
 # =============================================================================
