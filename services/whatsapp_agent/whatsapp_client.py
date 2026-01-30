@@ -57,16 +57,42 @@ class WhatsAppCloudAPI:
     # Sending Messages
     # =========================================================================
     
+    def send_template(self, to: str, template_name: str, language_code: str = "en_US") -> Dict[str, Any]:
+        """
+        Send a template message (bypasses 24h window).
+        """
+        # Validation
+        if not self.token or not self.phone_number_id:
+            return {"success": False, "error": "WhatsApp Credentials Missing"}
+
+        to_clean = to.replace("+", "").replace(" ", "").replace("-", "")
+        url = f"{self.BASE_URL}/{self.phone_number_id}/messages"
+        
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to_clean,
+            "type": "template",
+            "template": {
+                "name": template_name,
+                "language": {
+                    "code": language_code
+                }
+            }
+        }
+        
+        try:
+            response = requests.post(url, headers=self.headers, json=payload, timeout=30)
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except Exception as e:
+            logger.error(f"Failed to send template: {e}")
+            return {"success": False, "error": str(e)}
+
     def send_text(self, to: str, message: str) -> Dict[str, Any]:
         """
         Send a text message.
-        
-        Args:
-            to: Recipient phone number (E.164 format, e.g., +2348012345678)
-            message: Text message content
-        
-        Returns:
-            API response dict
+        Falls back to 'hello_world' template if 24h window is closed.
         """
         # Validation: Check for credentials
         if not self.token or not self.phone_number_id:
@@ -99,14 +125,19 @@ class WhatsAppCloudAPI:
             logger.info(f"Message sent to {to_clean}: {result.get('messages', [{}])[0].get('id', 'unknown')}")
             return {"success": True, "data": result}
         except requests.exceptions.HTTPError as e:
-            # Log the FULL error response from Meta
-            error_detail = ""
+            # Check for 24h window error (Code 131047)
+            error_detail = {}
             try:
                 error_detail = e.response.json()
-                logger.error(f"WhatsApp API Error: {error_detail}")
             except:
-                error_detail = e.response.text
-                logger.error(f"WhatsApp API Error (raw): {error_detail}")
+                pass
+            
+            # If 24h window closed, try fallback template
+            if error_detail.get("error", {}).get("code") == 131047:
+                logger.warning(f"24h Window Closed for {to_clean}. Attempting fallback template.")
+                return self.send_template(to_clean, "hello_world")
+
+            logger.error(f"WhatsApp API Error: {error_detail}")
             return {"success": False, "error": str(e), "detail": error_detail}
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to send WhatsApp message: {e}")
