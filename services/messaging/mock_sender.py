@@ -77,6 +77,7 @@ class MockMessageSender:
         student_id: int,
         school_id: int,
         message_type: str = MessageType.REMINDER,
+        **kwargs  # Swallow extra args like is_template
     ) -> Tuple[MessageLog, Optional[str]]:
         """
         Mock send a WhatsApp message.

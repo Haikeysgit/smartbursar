@@ -28,12 +28,21 @@ class MetaWhatsAppSender:
         student_id: int,
         school_id: int,
         message_type: str = MessageType.REMINDER,
+        is_template: bool = False,
+        template_name: str = None,
     ) -> Tuple[MessageLog, Optional[str]]:
         """
         Send a WhatsApp message using the Meta Cloud API.
+        If is_template is True, uses template_name (defaulting to message as content placeholder logic if needed, 
+        but for hello_world there are no params).
         """
         # Call the actual client
-        result = whatsapp_client.send_text(to_phone, message)
+        if is_template and template_name:
+            result = whatsapp_client.send_template(to_phone, template_name)
+            content_logged = f"[TEMPLATE: {template_name}]"
+        else:
+            result = whatsapp_client.send_text(to_phone, message)
+            content_logged = message
         
         status = MessageStatus.SENT if result["success"] else MessageStatus.FAILED
         error_msg = result.get("error") if not result["success"] else None
@@ -53,7 +62,7 @@ class MetaWhatsAppSender:
             channel=MessageChannel.WHATSAPP,
             direction=MessageDirection.OUTGOING,
             message_type=message_type,
-            content=message,
+            content=content_logged,
             status=status,
             sent_at=get_wat_now(),
             cost=0.50, # Estimated cost placeholder

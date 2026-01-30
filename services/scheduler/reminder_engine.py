@@ -434,13 +434,15 @@ def send_test_reminder(db: Session, student_id: int, school_id: int) -> Tuple[Op
     phase = get_current_phase(school) # Re-adding phase determination for message generation
     message = generate_reminder_message(student, school, phase)
     
-    # Send
+    # Send with Template "hello_world" to ensure delivery (First Contact Policy)
     log, error = sender.send_whatsapp(
         to_phone=student.parent_phone_primary,
-        message=message,
+        message=message, # Still passed for logging context inside sender if needed, but ignored by template
         student_id=student.id,
         school_id=school.id,
-        message_type=MessageType.REMINDER
+        message_type=MessageType.REMINDER,
+        is_template=True,
+        template_name="hello_world"
     )
     
     if error:
