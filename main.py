@@ -135,34 +135,33 @@ def debug_students():
         db.close()
 
 
-@app.get("/debug/gemini")
-def debug_gemini():
-    """Test if Gemini API is working"""
-    import os
-    api_key = os.getenv("GOOGLE_API_KEY", "NOT SET")
-    key_preview = api_key[:15] + "..." if len(api_key) > 15 else api_key
+@app.get("/debug/whatsapp")
+def debug_whatsapp():
+    """Test if WhatsApp credentials and mode are correct"""
+    from config.settings import settings
     
-    try:
-        from google import genai
-        from google.genai import types
-        
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.0-flash-lite",
-            contents=["Say 'Hello SmartBursar!' if you can hear me"],
-            config=types.GenerateContentConfig(response_mime_type="text/plain")
-        )
-        return {
-            "status": "SUCCESS",
-            "key_preview": key_preview,
-            "ai_response": response.text if response else "No response"
-        }
-    except Exception as e:
-        return {
-            "status": "FAILED",
-            "key_preview": key_preview,
-            "error": str(e)
-        }
+    token = os.getenv("WHATSAPP_TOKEN", "")
+    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+    env = os.getenv("ENVIRONMENT", "development")
+    
+    mode = "MOCK" if settings.MOCK_MODE else "LIVE (META)"
+    
+    # Check if we can actually reach Meta
+    from services.whatsapp_agent.whatsapp_client import whatsapp_client
+    
+    return {
+        "status": "INITIALIZED",
+        "mode": mode,
+        "environment_var": env,
+        "mock_mode_property": settings.MOCK_MODE,
+        "credentials": {
+            "token_set": len(token) > 0,
+            "phone_id_set": len(phone_id) > 0,
+            "token_preview": token[:10] + "..." if token else None,
+            "phone_id": phone_id
+        },
+        "whatsapp_client_ready": whatsapp_client.phone_number_id != ""
+    }
 
 
 @app.get("/seed-test-data")
