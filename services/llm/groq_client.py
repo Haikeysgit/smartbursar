@@ -84,29 +84,34 @@ class GroqClient:
     
     def _build_prompt(self, context: Dict[str, Any], tone: str) -> str:
         """Build a prompt from context."""
-        students = context.get("students", [])
+        student_name = context.get("student_name", "[STUDENT_NAME]")
+        amount_due = context.get("amount_due", "₦0.00")
+        due_date = context.get("due_date", "soon")
+        days_overdue = context.get("days_overdue", 0)
+        school_name = context.get("school_name", "[SCHOOL_NAME]")
         
-        if not students:
-            return "Generate a friendly greeting for a new user contacting a school payment system."
-        
-        student = students[0]
-        prompt = f"""Generate a {tone} payment reminder for:
-- Student: [STUDENT_NAME]
-- Balance: ₦{student.get('balance', 0):,.2f}
-- Status: {student.get('payment_status', 'PENDING')}
+        prompt = f"""You are the school Bursar at {school_name}. Write a {tone} payment reminder for a parent regarding their child [STUDENT_NAME].
+Details:
+- Balance: {amount_due}
+- Due Date: {due_date}
+- Days Overdue: {days_overdue}
 
-Keep it brief (2-3 sentences), friendly, and mention their specific balance."""
-        
+Instructions:
+1. Keep it brief (under 30 words).
+2. Professional and friendly.
+3. Be direct about the balance.
+4. Output ONLY the message text.
+5. Use [STUDENT_NAME] and [SCHOOL_NAME] as placeholders.
+"""
         return prompt
     
     def _replace_placeholders(self, message: str, context: Dict[str, Any]) -> str:
         """Replace placeholders with actual values."""
-        students = context.get("students", [])
+        student_name = context.get("student_name", "your child")
+        school_name = context.get("school_name", "the school")
         
-        if students:
-            student = students[0]
-            message = message.replace("[STUDENT_NAME]", student.get("full_name", "your child"))
-            message = message.replace("[PARENT_NAME]", context.get("parent_name", ""))
+        message = message.replace("[STUDENT_NAME]", student_name)
+        message = message.replace("[SCHOOL_NAME]", school_name)
         
         return message
     

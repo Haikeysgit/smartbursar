@@ -209,7 +209,7 @@ def generate_reminder_message(
     Returns:
         Formatted message string
     """
-    from services.llm.gemini_client import gemini_client
+    from services.llm.groq_client import groq_client
     
     # Calculate days overdue
     today = get_today_wat()
@@ -233,9 +233,9 @@ def generate_reminder_message(
     tone = get_phase_tone(phase)
     
     # Try AI generation
-    if gemini_client.is_active:
+    if groq_client.is_active:
         try:
-            ai_message = gemini_client.generate_message(context, tone)
+            ai_message = groq_client.generate_message(context, tone)
             if ai_message:
                 # Add exam barring warning for Phase 2
                 if phase == "PHASE_2" and "exam" not in ai_message.lower():
@@ -243,7 +243,7 @@ def generate_reminder_message(
                 return ai_message
         except Exception as e:
             # Log error but fallback gracefully
-            print(f"[WARNING] Gemini generation failed: {e}")
+            print(f"[WARNING] Groq generation failed: {e}")
     
     # Fallback to template
     return _get_fallback_template(context, tone, phase)
@@ -405,50 +405,42 @@ def reset_daily_counters(db: Session) -> int:
 # Manual Trigger (for dashboard)
 # =============================================================================
 
-def send_test_reminder(
-    db: Session,
-    student_id: int,
-    school_id: int,
-) -> Optional[MessageLog]:
+def send_test_reminder(db: Session, student_id: int, school_id: int) -> Tuple[Optional[MessageLog], Optional[str]]:
     """
-    Send a test reminder to a specific student.
-    
-    Args:
-        db: Database session
-        student_id: Student to send reminder to
-        school_id: School (for security validation)
-    
-    Returns:
-        MessageLog if successful, None if failed
+    Send a single test reminder immediately.
+    Used for UI verification.
     """
-    student = db.query(Student).filter(
-        Student.id == student_id,
-        Student.school_id == school_id,
-    ).first()
-    
-    if not student:
-        print("[ERROR] Student not found or access denied")
-        return None
-    
-    school = student.school
-    phase = get_current_phase(school)
-    
-    message = generate_reminder_message(student, school, phase)
+    from services.messaging.mock_sender import get_message_sender
     sender = get_message_sender(db)
     
+    student = db.query(Student).filter(Student.id == student_id).first()
+    school = db.query(School).filter(School.id == school_id).first()
+    
+    if not student or not school:
+        return None, "Student or School not found"
+    
+    # Generate message
+    # For test reminders, we can assume a default phase or determine it dynamically if needed.
+    # For simplicity, let's assume PHASE_1 for now or pass a default.
+    # The original function used get_current_phase(school), let's keep that logic for message generation.
+    phase = get_current_phase(school) # Re-adding phase determination for message generation
+    message = generate_reminder_message(student, school, phase)
+    
+    # Send
     log, error = sender.send_whatsapp(
         to_phone=student.parent_phone_primary,
         message=message,
         student_id=student.id,
         school_id=school.id,
+        message_type=MessageType.REMINDER
     )
     
     if error:
         print(f"[ERROR] {error}")
-        return None
+        return None, error
     
     print(f"[SUCCESS] Test message sent to {student.parent_name}")
-    return log
+    return log, None
 
 
 # Legacy alias for backward compatibility

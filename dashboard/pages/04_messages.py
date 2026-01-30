@@ -183,12 +183,14 @@ if opts:
         from services.scheduler.reminder_engine import send_test_reminder
         
         with get_db_context() as db2:
-            log = send_test_reminder(db2, student_id, school_id)
-            if log:
+            log, error_msg = send_test_reminder(db2, student_id, school_id)
+            if log and not error_msg:
                 st.success(f"✅ Success! Reminder sent to parent ({log.status if log.status else 'Sent'})")
                 st.balloons()
                 st.rerun()
             else:
-                st.error("❌ Failed to send test message. Please check your WhatsApp API token.")
+                st.error(f"❌ Failed to send test message: {error_msg if error_msg else 'Unknown error'}")
+                if error_msg and "token" in error_msg.lower():
+                    st.info("💡 Hint: Check your WhatsApp Token in Render Environment Variables.")
 else:
     st.warning("No students with outstanding balances to send reminders to.")

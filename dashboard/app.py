@@ -122,11 +122,12 @@ def clear_session_storage():
         width=0,
     )
 
-# Try to get session token from query params (set by JS on login)
+# SESSION RECOVERY HOOK: Source of truth for persistence
+# 1. Try to get token from query params (Streamlit native)
 query_params = st.query_params
 session_token = query_params.get("session", None)
 
-# SESSION RECOVERY HOEK: If not logged in and no session param, check localStorage via JS
+# 2. If no query param, try to recover from localStorage via JS "Bridge"
 if "role" not in st.session_state and not session_token:
     components.html(
         """
@@ -142,8 +143,8 @@ if "role" not in st.session_state and not session_token:
         height=0,
     )
 
+# 3. Verify token if present
 if "role" not in st.session_state and session_token:
-    # SECURE: Verify signature before trusting token
     session_data = verify_signed_session(session_token)
     if session_data and "user_id" in session_data:
         with get_db_context() as db:
@@ -158,8 +159,20 @@ if "role" not in st.session_state and session_token:
                 st.session_state["role"] = user.role
                 st.session_state["school_id"] = user.school_id
                 st.session_state["last_activity"] = datetime.now()
-                # Clear the query param for a clean URL
-                # st.query_params.clear() # Optional: could cause issues with Streamlit state
+                # DO NOT clear query params here, they are our backup on refresh!
+
+# 4. If logged in but query param is missing, sync it (Ensures NEXT refresh works)
+if "role" in st.session_state and not session_token:
+    # We need the token to sync to the URL
+    with get_db_context() as db:
+        user_info = {
+            "user_id": st.session_state["user_id"],
+            "email": st.session_state["email"],
+            "role": st.session_state["role"],
+            "school_id": st.session_state["school_id"]
+        }
+        token = create_signed_session(user_info)
+        st.query_params["session"] = token
 
 
 # =============================================================================

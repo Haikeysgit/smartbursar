@@ -58,8 +58,15 @@ class Settings(BaseSettings):
     APP_URL: str = "https://smartbursar-bot.onrender.com"  # Public URL of the app
     DEFAULT_COUNTRY_CODE: str = "NG"  # ISO 3166-1 alpha-2
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"
-    MOCK_MODE: bool = True  # Phase 1: Print instead of send
+    MOCK_MODE_OVERRIDE: bool = False # Set to True to force mock mode in production
     WHATSAPP_MODE: bool = False  # Phase 2: Use WhatsApp Web (pywhatkit)
+    
+    @property
+    def MOCK_MODE(self) -> bool:
+        """True if we should only print messages (default in dev)."""
+        if self.ENVIRONMENT == "production":
+            return self.MOCK_MODE_OVERRIDE
+        return True # Default to True in dev
     
     # -------------------------------------------------------------------------
     # Timezone (Nigeria = West Africa Time, UTC+1)
