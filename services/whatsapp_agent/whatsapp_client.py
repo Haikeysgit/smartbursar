@@ -101,9 +101,33 @@ class WhatsAppCloudAPI:
         
         try:
             response = requests.post(url, headers=self.headers, json=payload, timeout=30)
-            response.raise_for_status()
-            return {"success": True, "data": response.json()}
+            
+            # 1. LOG THE RAW RESPONSE IMMEDIATELY
+            print(f"META TEMPLATE RESPONSE: {response.status_code} - {response.text}", flush=True)
+            
+            # 2. CHECK FOR SPECIFIC ERRORS
+            response_json = {}
+            try:
+                response_json = response.json()
+            except:
+                pass
+                
+            error_code = 0
+            if "error" in response_json:
+                error_code = response_json["error"].get("code", 0)
+                
+            if error_code == 190:
+                print("ERROR: Access Token Expired.", flush=True)
+                return {"success": False, "error": "Access Token Expired"}
+            
+            # 3. RETURN FALSE ON FAILURE
+            if response.status_code != 200:
+                print(f"ERROR: Template failed ({response.status_code})", flush=True)
+                return {"success": False, "error": f"HTTP {response.status_code}", "detail": response.text}
+
+            return {"success": True, "data": response_json}
         except Exception as e:
+            print(f"ERROR: Template Connection Failed - {e}", flush=True)
             logger.error(f"Failed to send template: {e}")
             return {"success": False, "error": str(e)}
 
@@ -138,26 +162,44 @@ class WhatsAppCloudAPI:
         
         try:
             response = requests.post(url, headers=self.headers, json=payload, timeout=30)
-            response.raise_for_status()
+            
+            # 1. LOG THE RAW RESPONSE IMMEDIATELY
+            print(f"META RESPONSE: {response.status_code} - {response.text}", flush=True)
+            
+            # Check for application-level errors even if status is 200 (Meta sometimes does this)
+            response_json = {}
+            try:
+                response_json = response.json()
+            except:
+                pass
+                
+            # 2. CHECK FOR SPECIFIC ERRORS
+            error_code = 0
+            if "error" in response_json:
+                error_code = response_json["error"].get("code", 0)
+                
+            if error_code == 131047:
+                print("ERROR: 24-Hour Window Closed. Switching to Template.", flush=True)
+                # Fallback logic
+                logger.warning(f"24h Window Closed for {to_clean}. Attempting fallback template.")
+                return self.send_template(to_clean, "hello_world")
+            
+            if error_code == 190:
+                print("ERROR: Access Token Expired.", flush=True)
+                return {"success": False, "error": "Access Token Expired"}
+            
+            # 3. RETURN FALSE ON FAILURE
+            if response.status_code != 200:
+                print(f"ERROR: Non-200 Status Code ({response.status_code})", flush=True)
+                return {"success": False, "error": f"HTTP {response.status_code}", "detail": response.text}
+            
+            # If we got here, it's a real success
             result = response.json()
             logger.info(f"Message sent to {to_clean}: {result.get('messages', [{}])[0].get('id', 'unknown')}")
             return {"success": True, "data": result}
-        except requests.exceptions.HTTPError as e:
-            # Check for 24h window error (Code 131047)
-            error_detail = {}
-            try:
-                error_detail = e.response.json()
-            except:
-                pass
-            
-            # If 24h window closed, try fallback template
-            if error_detail.get("error", {}).get("code") == 131047:
-                logger.warning(f"24h Window Closed for {to_clean}. Attempting fallback template.")
-                return self.send_template(to_clean, "hello_world")
 
-            logger.error(f"WhatsApp API Error: {error_detail}")
-            return {"success": False, "error": str(e), "detail": error_detail}
         except requests.exceptions.RequestException as e:
+            print(f"ERROR: Connection Failed - {e}", flush=True)
             logger.error(f"Failed to send WhatsApp message: {e}")
             return {"success": False, "error": str(e)}
     
@@ -182,9 +224,16 @@ class WhatsAppCloudAPI:
         
         try:
             response = requests.post(url, headers=self.headers, json=payload, timeout=30)
-            response.raise_for_status()
+            
+            # 1. LOG THE RAW RESPONSE IMMEDIATELY
+            print(f"META IMAGE RESPONSE: {response.status_code} - {response.text}", flush=True)
+            
+            if response.status_code != 200:
+                return {"success": False, "error": f"HTTP {response.status_code}", "detail": response.text}
+                
             return {"success": True, "data": response.json()}
         except requests.exceptions.RequestException as e:
+            print(f"ERROR: Image Send Failed - {e}", flush=True)
             logger.error(f"Failed to send image: {e}")
             return {"success": False, "error": str(e)}
 
