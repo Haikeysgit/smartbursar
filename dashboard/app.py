@@ -126,6 +126,22 @@ def clear_session_storage():
 query_params = st.query_params
 session_token = query_params.get("session", None)
 
+# SESSION RECOVERY HOEK: If not logged in and no session param, check localStorage via JS
+if "role" not in st.session_state and not session_token:
+    components.html(
+        """
+        <script>
+            const token = localStorage.getItem('smartbursar_session');
+            if (token) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('session', token);
+                window.parent.location.href = url.href;
+            }
+        </script>
+        """,
+        height=0,
+    )
+
 if "role" not in st.session_state and session_token:
     # SECURE: Verify signature before trusting token
     session_data = verify_signed_session(session_token)
@@ -142,6 +158,8 @@ if "role" not in st.session_state and session_token:
                 st.session_state["role"] = user.role
                 st.session_state["school_id"] = user.school_id
                 st.session_state["last_activity"] = datetime.now()
+                # Clear the query param for a clean URL
+                # st.query_params.clear() # Optional: could cause issues with Streamlit state
 
 
 # =============================================================================

@@ -290,6 +290,7 @@ with tab1:
                     if result.rowcount > 0:
                         st.success(f"Password reset successfully for {reset_school['name']}!")
                         st.info(f"Tell them to login with their email and new password: **{new_password}**")
+                        st.rerun()
                     else:
                         st.warning("No admin user found for this school")
     else:
@@ -392,6 +393,7 @@ with tab2:
                             if imported > 0:
                                 st.success(f"Successfully imported {imported} students!")
                                 st.balloons()
+                                st.rerun()
                             
                             if errors:
                                 st.warning(f"Errors ({len(errors)}):")

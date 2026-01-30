@@ -338,6 +338,7 @@ with tab2:
                     st.success(f"Added {full_name} to {selected_class}!")
                     if final_fee > 0:
                         st.info(f"Fees set to: N{int(final_fee):,}")
+                    st.rerun()
                         
                 except Exception as e:
                     st.error(f"Error adding student: {e}")
@@ -453,6 +454,7 @@ with tab3:
                         if imported > 0:
                             st.success(f"Successfully imported {imported} students!")
                             st.balloons()
+                            st.rerun()
                         
                         if errors:
                             st.warning(f"Errors ({len(errors)}):")

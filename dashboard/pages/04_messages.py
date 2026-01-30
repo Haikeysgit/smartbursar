@@ -89,18 +89,21 @@ with get_db_context() as db:
     failed = sum(1 for m in messages if m.status == MessageStatus.FAILED)
     cost = sum(float(m.cost) for m in messages)
 
-col1, col2, col3, col4, col5 = st.columns(5)
+col_count = 5 if st.session_state.get("role") == "SUPER_ADMIN" else 4
+cols = st.columns(col_count)
 
-with col1:
+with cols[0]:
     st.metric("Total Sent", f"{total}")
-with col2:
+with cols[1]:
     st.metric("Delivered", f"{delivered}")
-with col3:
+with cols[2]:
     st.metric("Read", f"{read}")
-with col4:
+with cols[3]:
     st.metric("Failed", f"{failed}")
-with col5:
-    st.metric("Total Cost", f"N{cost:,.2f}")
+
+if st.session_state.get("role") == "SUPER_ADMIN":
+    with cols[4]:
+        st.metric("Total Cost", f"N{cost:,.2f}")
 
 st.markdown("---")
 
@@ -121,28 +124,34 @@ with get_db_context() as db:
         msg_data = []
     else:
         msg_data = []
+        is_super = st.session_state.get("role") == "SUPER_ADMIN"
         for m in recent:
             student = m.student
-            msg_data.append({
+            item = {
                 "sent_at": m.sent_at,
                 "student": student.full_name if student else "Unknown",
                 "channel": m.channel,
                 "type": m.message_type,
                 "status": m.status,
-                "cost": float(m.cost),
-            })
+            }
+            if is_super:
+                item["cost"] = float(m.cost)
+            msg_data.append(item)
 
 if msg_data:
     display = []
+    is_super = st.session_state.get("role") == "SUPER_ADMIN"
     for m in msg_data:
-        display.append({
+        row = {
             "Date": m["sent_at"].strftime("%Y-%m-%d %H:%M"),
             "Student": m["student"],
             "Channel": m["channel"],
             "Type": m["type"],
             "Status": m["status"],
-            "Cost": f"N{m['cost']:.2f}",
-        })
+        }
+        if is_super:
+            row["Cost"] = f"N{m['cost']:.2f}"
+        display.append(row)
     
     df = pd.DataFrame(display)
     st.dataframe(df, use_container_width=True, hide_index=True)
@@ -176,8 +185,10 @@ if opts:
         with get_db_context() as db2:
             log = send_test_reminder(db2, student_id, school_id)
             if log:
-                st.success("Test message sent! Check your terminal output.")
+                st.success(f"✅ Success! Reminder sent to parent ({log.status if log.status else 'Sent'})")
+                st.balloons()
+                st.rerun()
             else:
-                st.error("Failed to send test message")
+                st.error("❌ Failed to send test message. Please check your WhatsApp API token.")
 else:
     st.warning("No students with outstanding balances to send reminders to.")

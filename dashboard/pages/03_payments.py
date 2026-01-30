@@ -199,6 +199,7 @@ with tab1:
                     else:
                         st.success(f"Payment recorded! Receipt #{txn.receipt_number}")
                         st.balloons()
+                        st.rerun()
 
 
 # =============================================================================
