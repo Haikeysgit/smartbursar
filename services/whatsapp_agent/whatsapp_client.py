@@ -68,6 +68,14 @@ class WhatsAppCloudAPI:
         Returns:
             API response dict
         """
+        # Validation: Check for credentials
+        if not self.token or not self.phone_number_id:
+            return {
+                "success": False, 
+                "error": "WhatsApp Credentials Missing", 
+                "detail": "Set WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID in Render Environment Variables."
+            }
+
         # Clean phone number (remove + for API)
         to_clean = to.replace("+", "").replace(" ", "").replace("-", "")
         
