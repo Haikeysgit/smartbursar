@@ -563,7 +563,7 @@ else:
         
 
 
-else:
+        else:
             # School Admin - Show Plan Status
             st.caption("School Admin")
             
