@@ -348,7 +348,31 @@ if "role" not in st.session_state:
         # WhatsApp Contact Button with hover effect
         st.markdown("""
         <style>
-        <style>
+            .whatsapp-btn {
+                display: inline-flex !important;
+                align-items: center !important;
+                gap: 10px !important;
+                background: linear-gradient(135deg, #25D366 0%, #128C7E 100%) !important;
+                color: white !important;
+                padding: 0.8rem 1.5rem !important;
+                border-radius: 10px !important;
+                font-weight: 600 !important;
+                font-size: 0.95rem !important;
+                box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3) !important;
+                transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+                text-decoration: none !important;
+            }
+            .whatsapp-btn:hover {
+                transform: translateY(-3px) !important;
+                box-shadow: 0 8px 25px rgba(37, 211, 102, 0.5) !important;
+                color: white !important;
+                text-decoration: none !important;
+            }
+            .whatsapp-btn:visited, .whatsapp-btn:active, .whatsapp-btn:focus {
+                color: white !important;
+                text-decoration: none !important;
+            }
+
             /* STANDARD LAYOUT RESTORATION */
             /* Default padding adjustments only */
             .block-container {
