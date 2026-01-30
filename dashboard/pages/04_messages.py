@@ -60,6 +60,19 @@ school_id = st.session_state.get("school_id")
 # Header
 # =============================================================================
 
+# Debug / Environment Status
+from config.settings import settings
+import os
+
+env = os.getenv("ENVIRONMENT", "development")
+is_mock = settings.MOCK_MODE
+
+if is_mock:
+    st.error(f"⚠️ SYSTEM IN MOCK MODE (Env: {env}) - Messages will NOT be sent to phones.")
+    st.caption("To fix: Set ENVIRONMENT=production in Render.")
+else:
+    st.success(f"✅ SYSTEM LIVE (Env: {env}) - Messages will be delivered via WhatsApp.")
+
 st.title("Messages")
 
 with get_db_context() as db:
