@@ -338,39 +338,78 @@ if "role" not in st.session_state:
             </div>
             <div style="display: flex; align-items: center; gap: 10px;">
                 <div style="width: 28px; height: 28px; background: rgba(124, 58, 237, 0.15); border-radius: 6px; display: flex; align-items: center; justify-content: center;">
-                    <span style="color: #8b5cf6; font-size: 14px; font-weight: bold;">✓</span>
-                </div>
-                <span style="color: #ffffff; font-size: 0.95rem;">Real-time Debtor Reports</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # WhatsApp Contact Button with hover effect
-        st.markdown("""
         <style>
-            .whatsapp-btn {
-                display: inline-flex !important;
-                align-items: center !important;
-                gap: 10px !important;
-                background: linear-gradient(135deg, #25D366 0%, #128C7E 100%) !important;
+            /* STICKY FOOTER & FLEXBOX SETUP */
+            html, body, [data-testid="stAppViewContainer"] {
+                height: 100%;
+                margin: 0;
+            }
+            
+            [data-testid="stAppViewContainer"] {
+                display: flex;
+                flex-direction: column;
+                min-height: 10vh;
+            }
+            
+            [data-testid="stAppViewContainer"] > .main {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+            }
+            
+            [data-testid="stAppViewContainer"] > .main > .block-container {
+                flex: 1;
+                padding-top: 2rem;
+                padding-bottom: 1rem;
+            }
+            
+            /* Remove default padding */
+            .block-container {
+                padding-top: 1rem !important;
+                padding-bottom: 0rem !important;
+                max-width: 100% !important;
+            }
+            
+            /* CUSTOM GRADIENT DIVIDER */
+            hr {
+                margin: 2em 0;
+                border: 0;
+                height: 1px;
+                background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(124, 58, 237, 0.5), rgba(0, 0, 0, 0));
+            }
+            
+            /* GLOBAL TEXT COLOR FIX */
+            p, h1, h2, h3, span, div, label {
+                color: #e2e8f0 !important;
+            }
+            
+            /* INPUT FIELDS: Modern Dark Theme */
+            .stTextInput > div > div > input {
+                background-color: #1e293b !important;
+                color: #f8fafc !important;
+                border: 1px solid #334155 !important;
+                border-radius: 8px !important;
+                padding: 10px 12px !important;
+            }
+            .stTextInput > div > div > input:focus {
+                border-color: #7c3aed !important;
+                box-shadow: 0 0 0 1px #7c3aed !important;
+            }
+            
+            /* BUTTONS: Primary Action Color */
+            .stButton > button {
+                background-color: #7c3aed !important;
                 color: white !important;
-                padding: 0.8rem 1.5rem !important;
-                border-radius: 10px !important;
+                border: none !important;
+                border-radius: 8px !important;
                 font-weight: 600 !important;
-                font-size: 0.95rem !important;
-                box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3) !important;
-                transition: transform 0.2s ease, box-shadow 0.2s ease !important;
-                text-decoration: none !important;
+                padding: 0.5rem 1rem !important;
+                transition: all 0.2s ease !important;
             }
-            .whatsapp-btn:hover {
-                transform: translateY(-3px) !important;
-                box-shadow: 0 8px 25px rgba(37, 211, 102, 0.5) !important;
-                color: white !important;
-                text-decoration: none !important;
-            }
-            .whatsapp-btn:visited, .whatsapp-btn:active, .whatsapp-btn:focus {
-                color: white !important;
-                text-decoration: none !important;
+            .stButton > button:hover {
+                background-color: #6d28d9 !important;
+                transform: translateY(-1px);
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
             }
         </style>
         <div style="margin-top: 2rem;">
