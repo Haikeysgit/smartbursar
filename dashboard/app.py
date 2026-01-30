@@ -199,38 +199,9 @@ def bootstrap_admin():
             print("Status: Admin Exists (No Reset)")
             pass
         
-        # 2. ABC SCHOOL ADMIN (For 'that abc school login')
-        abc_school = db.query(School).filter(School.school_code == "ABC").first()
-        if not abc_school:
-            abc_school = School(
-                school_code="ABC",
-                school_name="ABC Primary & Secondary School",
-                address="123 Education Lane",
-                phone="08098765432", # Required field
-                account_number="0123456789",
-                bank_name="GTBank",
-                account_name="ABC Primary School", # Required field
-                subscription_end_date=date.today() + timedelta(days=365) # Required field
-            )
-            db.add(abc_school)
-            db.commit()
-            db.refresh(abc_school)
-            print("Status: Created ABC School")
-            
-        abc_admin = db.query(User).filter(User.email == "admin@abcschool.com").first()
-        if not abc_admin:
-            abc_admin = User(
-                email="admin@abcschool.com",
-                role="SCHOOL_ADMIN",
-                school_id=abc_school.id,
-                is_active=True
-            )
-            abc_admin.set_password("school123")
-            db.add(abc_admin)
-            print("Status: Created ABC School Admin")
-        else:
-            # Removed forced reset to allow personal password changes
-            pass
+        # 2. ABC SCHOOL (REMOVED - No longer re-seeded automatically)
+        # To reset the environment, delete the database or manually re-create schools.
+        pass
             
         db.commit()
         return True
