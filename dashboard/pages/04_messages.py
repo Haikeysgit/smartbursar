@@ -68,10 +68,10 @@ env = os.getenv("ENVIRONMENT", "development")
 is_mock = settings.MOCK_MODE
 
 if is_mock:
-    st.error(f"⚠️ SYSTEM IN MOCK MODE (Env: {env}) - Messages will NOT be sent to phones.")
+    st.error(f"SYSTEM IN MOCK MODE (Env: {env}) - Messages will NOT be sent to phones.")
     st.caption("To fix: Set ENVIRONMENT=production in Render.")
 else:
-    st.success(f"✅ SYSTEM LIVE (Env: {env}) - Messages will be delivered via WhatsApp.")
+    st.info(f"SYSTEM LIVE (Env: {env}) - Messages will be delivered via WhatsApp.")
 
 st.title("Messages")
 

@@ -54,6 +54,24 @@ class WhatsAppCloudAPI:
         }
     
     # =========================================================================
+    # Helper
+    # =========================================================================
+    
+    def _clean_phone_number(self, phone: str) -> str:
+        """
+        Normalize phone number to international format (starting with country code).
+        Handles Nigerian local format (080...) -> 23480...
+        """
+        # Remove common separators
+        cleaned = phone.replace("+", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        
+        # Specific handling for Nigeria (common issue)
+        if cleaned.startswith("0") and len(cleaned) == 11:
+            cleaned = "234" + cleaned[1:]
+            
+        return cleaned
+
+    # =========================================================================
     # Sending Messages
     # =========================================================================
     
@@ -65,7 +83,7 @@ class WhatsAppCloudAPI:
         if not self.token or not self.phone_number_id:
             return {"success": False, "error": "WhatsApp Credentials Missing"}
 
-        to_clean = to.replace("+", "").replace(" ", "").replace("-", "")
+        to_clean = self._clean_phone_number(to)
         url = f"{self.BASE_URL}/{self.phone_number_id}/messages"
         
         payload = {
@@ -103,7 +121,7 @@ class WhatsAppCloudAPI:
             }
 
         # Clean phone number (remove + for API)
-        to_clean = to.replace("+", "").replace(" ", "").replace("-", "")
+        to_clean = self._clean_phone_number(to)
         
         url = f"{self.BASE_URL}/{self.phone_number_id}/messages"
         
@@ -147,7 +165,7 @@ class WhatsAppCloudAPI:
         """
         Send an image message.
         """
-        to_clean = to.replace("+", "").replace(" ", "").replace("-", "")
+        to_clean = self._clean_phone_number(to)
         
         url = f"{self.BASE_URL}/{self.phone_number_id}/messages"
         
