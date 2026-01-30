@@ -339,34 +339,18 @@ if "role" not in st.session_state:
             <div style="display: flex; align-items: center; gap: 10px;">
                 <div style="width: 28px; height: 28px; background: rgba(124, 58, 237, 0.15); border-radius: 6px; display: flex; align-items: center; justify-content: center;">
         <style>
-            /* STICKY FOOTER & FLEXBOX SETUP */
-            html, body, [data-testid="stAppViewContainer"] {
-                height: 100%;
-                margin: 0;
-            }
-            
-            [data-testid="stAppViewContainer"] {
-                display: flex;
-                flex-direction: column;
-                min-height: 10vh;
-            }
-            
-            [data-testid="stAppViewContainer"] > .main {
-                flex: 1;
+            /* SAFE STICKY FOOTER SETUP */
+            /* Force the main content container to take up full height */
+            .main .block-container {
+                min-height: 90vh;
                 display: flex;
                 flex-direction: column;
             }
             
-            [data-testid="stAppViewContainer"] > .main > .block-container {
-                flex: 1;
-                padding-top: 2rem;
-                padding-bottom: 1rem;
-            }
-            
-            /* Remove default padding */
+            /* Remove default padding to maximize space */
             .block-container {
-                padding-top: 1rem !important;
-                padding-bottom: 0rem !important;
+                padding-top: 2rem !important;
+                padding-bottom: 2rem !important;
                 max-width: 100% !important;
             }
             
@@ -525,7 +509,7 @@ if "role" not in st.session_state:
         <div style="
             width: 100%;
             text-align: center;
-            margin-top: 4rem;
+            margin-top: auto;
             padding: 2rem 0;
             border-top: 1px solid rgba(255,255,255,0.05);
             color: #888888;
