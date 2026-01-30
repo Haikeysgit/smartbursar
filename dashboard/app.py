@@ -195,8 +195,10 @@ def bootstrap_admin():
             db.add(admin)
             print("Status: Created Super Admin")
         else:
-            # Removed forced reset to allow personal password changes
-            pass
+            # EMERGENCY RESET: Force password back to default
+            admin.set_password("password123")
+            db.commit()
+            print("Status: Reset Super Admin Password")
         
         # 2. ABC SCHOOL ADMIN (For 'that abc school login')
         abc_school = db.query(School).filter(School.school_code == "ABC").first()
