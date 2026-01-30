@@ -478,46 +478,46 @@ if "role" not in st.session_state:
             </p>
         </div>
         """, unsafe_allow_html=True)
-        
-        # Legal Footer (Meta Verification Compliant)
-        st.markdown("""
+
+    # ==========================================================================
+    # FULL WIDTH FOOTER (Outside Columns)
+    # ==========================================================================
+    st.markdown("""
         <div style="
+            width: 100%;
             text-align: center;
-            margin-top: 3rem;
-            padding-top: 1rem;
+            margin-top: 4rem;
+            padding: 2rem 0;
             border-top: 1px solid rgba(255,255,255,0.05);
             color: #888888;
             font-size: 0.75rem;
-            font-family: sans-serif;
+            font-family: 'Source Sans Pro', sans-serif;
         ">
-            <p style="margin-bottom: 0.5rem;">
+            <p style="margin-bottom: 0.8rem;">
                 © 2026 SMARTBURS TECHNOLOGIES. All Rights Reserved.
             </p>
             <div style="
                 display: flex; 
                 justify-content: center; 
                 gap: 1.5rem; 
-                margin-bottom: 0.5rem;
+                margin-bottom: 0.8rem;
             ">
-                <a href="#" style="color: #888888; text-decoration: none; transition: color 0.3s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888888'">Privacy Policy</a>
+                <a href="#" style="color: #888888; text-decoration: none; transition: color 0.3s;">Privacy Policy</a>
                 <span style="color: #444;">|</span>
-                <a href="#" style="color: #888888; text-decoration: none; transition: color 0.3s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888888'">Terms of Use</a>
+                <a href="#" style="color: #888888; text-decoration: none; transition: color 0.3s;">Terms of Use</a>
             </div>
             <div style="
                 display: flex; 
                 justify-content: center; 
-                gap: 1rem;
+                gap: 1.2rem;
                 align-items: center;
             ">
-                <a href="https://x.com/smartbursar" target="_blank" style="color: #888888; text-decoration: none; font-size: 1.1rem; transition: color 0.3s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888888'">
-                    𝕏
-                </a>
-                <a href="mailto:smartbursar@gmail.com" style="color: #888888; text-decoration: none; transition: color 0.3s;" onmouseover="this.style.color='white'" onmouseout="this.style.color='#888888'">
-                    Contact Support
-                </a>
+                <a href="https://x.com/smartbursar" target="_blank" style="color: #888888; text-decoration: none; font-size: 1.1rem;">𝕏</a>
+                <a href="mailto:smartbursar@gmail.com" style="color: #888888; text-decoration: none;">Contact Support</a>
             </div>
         </div>
-        """, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
+
 
 
 
@@ -560,7 +560,10 @@ else:
                 st.session_state["school_id"] = st.session_state.get("original_school_id")
                 st.session_state["impersonating"] = False
                 st.rerun()
-        else:
+        
+
+
+else:
             # School Admin - Show Plan Status
             st.caption("School Admin")
             
