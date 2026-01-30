@@ -338,6 +338,15 @@ if "role" not in st.session_state:
             </div>
             <div style="display: flex; align-items: center; gap: 10px;">
                 <div style="width: 28px; height: 28px; background: rgba(124, 58, 237, 0.15); border-radius: 6px; display: flex; align-items: center; justify-content: center;">
+                    <span style="color: #8b5cf6; font-size: 14px; font-weight: bold;">✓</span>
+                </div>
+                <span style="color: #ffffff; font-size: 0.95rem;">Real-time Debtor Reports</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # WhatsApp Contact Button with hover effect
+        st.markdown("""
         <style>
             /* SAFE STICKY FOOTER SETUP */
             /* Force the main content container to take up full height */
