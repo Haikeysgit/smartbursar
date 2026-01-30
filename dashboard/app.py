@@ -342,15 +342,15 @@ if "role" not in st.session_state:
             /* SAFE STICKY FOOTER SETUP */
             /* Force the main content container to take up full height */
             .main .block-container {
-                min-height: 90vh;
-                display: flex;
-                flex-direction: column;
+                min-height: 100vh;
+                position: relative;
+                padding-bottom: 180px !important; /* Space for footer */
+                display: block; /* Restore standard block layout */
             }
             
             /* Remove default padding to maximize space */
             .block-container {
                 padding-top: 2rem !important;
-                padding-bottom: 2rem !important;
                 max-width: 100% !important;
             }
             
@@ -509,7 +509,9 @@ if "role" not in st.session_state:
         <div style="
             width: 100%;
             text-align: center;
-            margin-top: auto;
+            position: absolute;
+            bottom: 0;
+            left: 0;
             padding: 2rem 0;
             border-top: 1px solid rgba(255,255,255,0.05);
             color: #888888;
