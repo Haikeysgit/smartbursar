@@ -261,6 +261,7 @@ def trigger_daily_tasks(db: Session = Depends(get_db)):
     """
     Manually trigger the 7AM daily tasks (Reminders).
     Useful for testing or recovering from missed cron jobs.
+    NOTE: This uses the OLD phase-based logic.
     """
     try:
         from services.scheduler.reminder_engine import run_reminder_cycle
@@ -275,6 +276,33 @@ def trigger_daily_tasks(db: Session = Depends(get_db)):
         }
     except Exception as e:
         logger.error(f"Daily task execution failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/trigger-template-reminders")
+def trigger_template_reminders(db: Session = Depends(get_db)):
+    """
+    NEW: Trigger 3-tier due-date based template reminders.
+    
+    Schedule: Daily at 8:00 AM WAT (use Render Cron Job with this URL)
+    
+    Triggers:
+        - 3 days before due_date -> fee_alert_soft
+        - On due_date -> fee_alert_v1
+        - 7 days after due_date -> fee_alert_urgent
+    """
+    try:
+        from services.scheduler.reminder_engine import run_template_reminder_cycle
+        
+        stats = run_template_reminder_cycle(db)
+        
+        return {
+            "success": True,
+            "message": "Template reminder cycle completed",
+            "stats": stats
+        }
+    except Exception as e:
+        logger.error(f"Template reminder execution failed: {e}")
         return {"success": False, "error": str(e)}
 
 # =============================================================================

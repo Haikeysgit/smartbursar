@@ -460,3 +460,146 @@ def send_test_reminder(db: Session, student_id: int, school_id: int) -> Tuple[Op
 
 # Legacy alias for backward compatibility
 run_high_intensity_cycle = run_reminder_cycle
+
+
+# =============================================================================
+# 3-Tier Due-Date Template Scheduling (NEW)
+# =============================================================================
+
+def get_template_for_due_date(student: Student) -> Optional[Tuple[str, str]]:
+    """
+    Determine which template to send based on days until/since due date.
+    
+    Returns:
+        Tuple of (template_name, context) or None if no trigger today
+    """
+    if not student.due_date:
+        return None
+    
+    today = get_today_wat()
+    days_diff = (student.due_date - today).days  # Positive = future, Negative = past
+    
+    # 3-Tier Logic
+    if days_diff == 3:
+        return ("fee_alert_soft", "POLITE")      # 3 days before due
+    elif days_diff == 0:
+        return ("fee_alert_v1", "FORMAL")        # Due today
+    elif days_diff == -7:
+        return ("fee_alert_urgent", "DEMAND")    # 7 days overdue
+    
+    return None
+
+
+def build_template_vars(student: Student, school: School) -> list:
+    """Build the 6 template variables in correct order."""
+    return [
+        format_naira(student.balance),   # {{1}} - Amount
+        student.full_name,                # {{2}} - Student Name
+        school.school_name,               # {{3}} - School Name
+        school.bank_name,                 # {{4}} - Bank
+        school.account_number,            # {{5}} - Account Number
+        school.account_name,              # {{6}} - Account Name
+    ]
+
+
+def run_template_reminder_cycle(db: Session) -> dict:
+    """
+    Run 3-tier due-date based template reminders.
+    
+    Schedule: Daily at 8:00 AM WAT
+    
+    Triggers:
+        - 3 days before due_date -> fee_alert_soft
+        - On due_date -> fee_alert_v1
+        - 7 days after due_date -> fee_alert_urgent
+    
+    Returns:
+        Summary dict with counts
+    """
+    stats = {
+        "schools_processed": 0,
+        "students_checked": 0,
+        "templates_sent": 0,
+        "soft_reminders": 0,
+        "standard_reminders": 0,
+        "urgent_reminders": 0,
+        "skipped_no_trigger": 0,
+        "errors": 0,
+    }
+    
+    print(f"\n[SmartBursar] Template Reminder Cycle - {get_wat_now().strftime('%Y-%m-%d %H:%M')} WAT")
+    print("="*60)
+    
+    # Get all active schools
+    active_schools = db.query(School).filter(School.status == "ACTIVE").all()
+    
+    for school in active_schools:
+        if not school.is_active:
+            print(f"[SKIP] {school.school_name} - subscription expired")
+            continue
+        
+        stats["schools_processed"] += 1
+        print(f"\n[SCHOOL] {school.school_name}")
+        
+        # Get students with outstanding balance
+        students = db.query(Student).filter(
+            Student.school_id == school.id,
+            Student.fees_total_due > Student.amount_paid,
+            Student.is_archived == False,
+            Student.due_date.isnot(None),
+        ).all()
+        
+        sender = get_message_sender(db)
+        
+        for student in students:
+            stats["students_checked"] += 1
+            
+            # Check if this student triggers a template today
+            trigger = get_template_for_due_date(student)
+            
+            if not trigger:
+                stats["skipped_no_trigger"] += 1
+                continue
+            
+            template_name, context = trigger
+            template_vars = build_template_vars(student, school)
+            
+            try:
+                log, error = sender.send_whatsapp(
+                    to_phone=student.parent_phone_primary,
+                    message="",  # Not used for templates
+                    student_id=student.id,
+                    school_id=school.id,
+                    message_type=MessageType.REMINDER,
+                    is_template=True,
+                    template_name=template_name,
+                    template_vars=template_vars,
+                )
+                
+                if error:
+                    print(f"  [ERROR] {student.full_name}: {error}")
+                    stats["errors"] += 1
+                else:
+                    days_diff = (student.due_date - get_today_wat()).days
+                    print(f"  [SENT] {student.full_name} | {template_name} | days_diff={days_diff}")
+                    stats["templates_sent"] += 1
+                    
+                    # Track by type
+                    if template_name == "fee_alert_soft":
+                        stats["soft_reminders"] += 1
+                    elif template_name == "fee_alert_v1":
+                        stats["standard_reminders"] += 1
+                    elif template_name == "fee_alert_urgent":
+                        stats["urgent_reminders"] += 1
+                    
+            except Exception as e:
+                print(f"  [ERROR] {student.full_name}: {str(e)}")
+                stats["errors"] += 1
+    
+    print(f"\n{'='*60}")
+    print(f"[SUMMARY] {stats['schools_processed']} schools, {stats['students_checked']} students checked")
+    print(f"          Sent: {stats['templates_sent']} (Soft: {stats['soft_reminders']}, "
+          f"Standard: {stats['standard_reminders']}, Urgent: {stats['urgent_reminders']})")
+    print(f"          Skipped: {stats['skipped_no_trigger']}, Errors: {stats['errors']}")
+    
+    return stats
