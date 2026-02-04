@@ -1,0 +1,15 @@
+name: Daily Fee Sweeper
+
+on:
+  schedule:
+    # Runs at 07:00 UTC (8:00 AM Nigeria Time) every day
+    - cron: '0 7 * * *'
+  workflow_dispatch: # Allows manual triggering from GitHub UI
+
+jobs:
+  wake_up_and_sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger SmartBursar Reminder Endpoint
+        run: |
+          curl -X GET https://smartbursar.onrender.com/trigger-template-reminders
