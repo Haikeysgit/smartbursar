@@ -30,16 +30,16 @@ class MetaWhatsAppSender:
         message_type: str = MessageType.REMINDER,
         is_template: bool = False,
         template_name: str = None,
+        template_vars: list = None,
     ) -> Tuple[MessageLog, Optional[str]]:
         """
         Send a WhatsApp message using the Meta Cloud API.
-        If is_template is True, uses template_name (defaulting to message as content placeholder logic if needed, 
-        but for hello_world there are no params).
+        If is_template is True, uses template_name with optional template_vars.
         """
         # Call the actual client
         if is_template and template_name:
-            result = whatsapp_client.send_template(to_phone, template_name)
-            content_logged = f"[TEMPLATE: {template_name}]"
+            result = whatsapp_client.send_template(to_phone, template_name, template_vars=template_vars)
+            content_logged = f"[TEMPLATE: {template_name}] vars={template_vars}"
         else:
             result = whatsapp_client.send_text(to_phone, message)
             content_logged = message

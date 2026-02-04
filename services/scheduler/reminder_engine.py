@@ -415,7 +415,7 @@ def reset_daily_counters(db: Session) -> int:
 
 def send_test_reminder(db: Session, student_id: int, school_id: int) -> Tuple[Optional[MessageLog], Optional[str]]:
     """
-    Send a single test reminder immediately.
+    Send a single test reminder immediately using the fee_alert_v1 template.
     Used for UI verification.
     """
     from services.messaging.mock_sender import get_message_sender
@@ -427,29 +427,34 @@ def send_test_reminder(db: Session, student_id: int, school_id: int) -> Tuple[Op
     if not student or not school:
         return None, "Student or School not found"
     
-    # Generate message
-    # For test reminders, we can assume a default phase or determine it dynamically if needed.
-    # For simplicity, let's assume PHASE_1 for now or pass a default.
-    # The original function used get_current_phase(school), let's keep that logic for message generation.
-    phase = get_current_phase(school) # Re-adding phase determination for message generation
-    message = generate_reminder_message(student, school, phase)
+    # Build template variables for fee_alert_v1
+    # Order: Amount, Student Name, School Name, Bank, Account Number, Account Name
+    template_vars = [
+        format_naira(student.balance),      # {{1}} - Amount (e.g., "₦50,000")
+        student.full_name,                   # {{2}} - Student Name
+        school.school_name,                  # {{3}} - School Name
+        school.bank_name,                    # {{4}} - Bank (direct column on School)
+        school.account_number,               # {{5}} - Account Number (direct column)
+        school.account_name,                 # {{6}} - Account Name (direct column)
+    ]
     
-    # Send with Template "hello_world" to ensure delivery (First Contact Policy)
+    # Send with Template "fee_alert_v1"
     log, error = sender.send_whatsapp(
         to_phone=student.parent_phone_primary,
-        message=message, # Still passed for logging context inside sender if needed, but ignored by template
+        message="",  # Not used for template messages
         student_id=student.id,
         school_id=school.id,
         message_type=MessageType.REMINDER,
         is_template=True,
-        template_name="hello_world"
+        template_name="fee_alert_v1",
+        template_vars=template_vars,
     )
     
     if error:
         print(f"[ERROR] {error}")
         return None, error
     
-    print(f"[SUCCESS] Test message sent to {student.parent_name}")
+    print(f"[SUCCESS] Test template sent to {student.parent_name}")
     return log, None
 
 

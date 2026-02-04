@@ -75,9 +75,18 @@ class WhatsAppCloudAPI:
     # Sending Messages
     # =========================================================================
     
-    def send_template(self, to: str, template_name: str, language_code: str = "en_US") -> Dict[str, Any]:
+    def send_template(self, to: str, template_name: str, template_vars: list = None, language_code: str = "en_US") -> Dict[str, Any]:
         """
         Send a template message (bypasses 24h window).
+        
+        Args:
+            to: Recipient phone number
+            template_name: Name of the approved template (e.g., 'fee_alert_v1')
+            template_vars: List of variable values in order (e.g., ["₦50,000", "Daniel Okon", ...])
+            language_code: Template language code (default: en_US)
+        
+        Returns:
+            API response dict with success status
         """
         # Validation
         if not self.token or not self.phone_number_id:
@@ -86,17 +95,31 @@ class WhatsAppCloudAPI:
         to_clean = self._clean_phone_number(to)
         url = f"{self.BASE_URL}/{self.phone_number_id}/messages"
         
+        # Build template object
+        template_obj = {
+            "name": template_name,
+            "language": {
+                "code": language_code
+            }
+        }
+        
+        # Add components if variables are provided
+        if template_vars:
+            template_obj["components"] = [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": str(var)} for var in template_vars
+                    ]
+                }
+            ]
+        
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": to_clean,
             "type": "template",
-            "template": {
-                "name": template_name,
-                "language": {
-                    "code": language_code
-                }
-            }
+            "template": template_obj
         }
         
         try:
