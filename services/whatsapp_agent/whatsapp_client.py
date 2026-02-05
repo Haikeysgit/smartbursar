@@ -75,7 +75,7 @@ class WhatsAppCloudAPI:
     # Sending Messages
     # =========================================================================
     
-    def send_template(self, to: str, template_name: str, template_vars: list = None, language_code: str = "en_US") -> Dict[str, Any]:
+    def send_template(self, to: str, template_name: str, template_vars: list = None, language_code: str = "en") -> Dict[str, Any]:
         """
         Send a template message (bypasses 24h window).
         
