@@ -32,14 +32,15 @@ class ReceiptExtractor:
         self.api_key = os.getenv("GOOGLE_API_KEY", "")
         self.client = None
         
+        # NOTE: Gemini OCR is deprecated. We now use OCR.Space + Groq.
+        # This class is kept for backward compatibility but is no longer used.
         if self.api_key:
             try:
                 self.client = genai.Client(api_key=self.api_key)
                 logger.info("Receipt Extractor initialized with google-genai SDK")
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini Client: {e}")
-        else:
-            logger.warning("GOOGLE_API_KEY not set. Receipt extraction disabled.")
+        # Removed: GOOGLE_API_KEY check - no longer needed since we use OCR.Space
     
     def extract_from_file(self, file_path: str) -> Dict[str, Any]:
         if not self.client:
