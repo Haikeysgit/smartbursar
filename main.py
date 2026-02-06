@@ -204,6 +204,80 @@ def purge_zombie_data():
         db.close()
 
 
+@app.get("/scrub-admin-phone/{phone}")
+def scrub_admin_phone(phone: str):
+    """
+    URGENT FIX: Remove an admin's phone number from the students table
+    and clear any stuck pending transactions.
+    
+    Usage: /scrub-admin-phone/2348031234567
+    """
+    db = SessionLocal()
+    try:
+        from models.student import Student
+        from models.transaction import Transaction
+        from models.school import School
+        
+        # Normalize phone - remove + and spaces
+        clean_phone = phone.replace("+", "").replace(" ", "").replace("-", "")
+        
+        results = {
+            "phone_searched": clean_phone,
+            "students_deleted": [],
+            "transactions_cancelled": 0
+        }
+        
+        # 1. Find and delete any students with this parent_phone
+        # Search for various formats
+        search_patterns = [
+            clean_phone,
+            f"+{clean_phone}",
+            f"234{clean_phone[-10:]}" if len(clean_phone) >= 10 else clean_phone,
+            f"0{clean_phone[-10:]}" if len(clean_phone) >= 10 else clean_phone,
+        ]
+        
+        for pattern in search_patterns:
+            students = db.query(Student).filter(
+                Student.parent_phone.contains(pattern[-10:])  # Last 10 digits
+            ).all()
+            
+            for student in students:
+                results["students_deleted"].append({
+                    "id": student.id,
+                    "name": student.full_name,
+                    "parent_phone": student.parent_phone,
+                    "school_id": student.school_id
+                })
+                
+                # Delete transactions for this student first
+                db.query(Transaction).filter(Transaction.student_id == student.id).delete()
+                db.delete(student)
+        
+        # 2. Cancel ALL stuck pending_verification transactions
+        stuck_transactions = db.query(Transaction).filter(
+            Transaction.status == "pending_verification"
+        ).all()
+        
+        for txn in stuck_transactions:
+            txn.status = "cancelled"
+            txn.notes = (txn.notes or "") + " | Cancelled by admin phone scrub"
+            results["transactions_cancelled"] += 1
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Phone {clean_phone} scrubbed from students table!",
+            "results": results,
+            "next_step": "The admin can now use 'Confirmed' without identity conflict"
+        }
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "error": str(e)}
+    finally:
+        db.close()
+
+
 @app.get("/debug/students")
 def debug_students():
     """Debug endpoint to see what's in the database"""
