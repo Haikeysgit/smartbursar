@@ -111,11 +111,26 @@ def save_session_to_storage(user_data: dict):
     )
 
 def clear_session_storage():
-    """Clear the session from localStorage on logout."""
+    """Clear all session data from browser storage and force logout."""
     components.html(
         """
         <script>
+            // 1. Clear localStorage
             localStorage.removeItem('smartbursar_session');
+            localStorage.clear();
+            
+            // 2. Clear sessionStorage
+            sessionStorage.clear();
+            
+            // 3. Clear cookies (set to expire immediately)
+            document.cookie.split(";").forEach(function(c) { 
+                document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+            });
+            
+            // 4. Clear URL query params and force redirect
+            const url = new URL(window.parent.location.href);
+            url.searchParams.delete('session');
+            window.parent.location.href = url.origin + url.pathname;
         </script>
         """,
         height=0,
