@@ -182,6 +182,12 @@ Rules:
                     
                     parsed = json.loads(content)
                     parsed["error"] = False
+                    
+                    # --- CRITICAL FIX: OPay Strict Label Extraction ---
+                    # The LLM sometimes swaps Sender/Receiver on OPay receipts.
+                    # We run a strict regex pass to correct this if labels are found.
+                    self._apply_strict_opay_rules(text, parsed)
+                    
                     return parsed
                     
                 except json.JSONDecodeError:
@@ -191,6 +197,96 @@ Rules:
         except Exception as e:
             logger.error(f"Groq parsing failed: {e}")
             return {"error": True, "reason": "AI parsing failed"}
+
+    def _apply_strict_opay_rules(self, text: str, parsed_data: Dict[str, Any]):
+        """
+        Apply strict regex rules for OPay and similar templates where
+        Sender/Receiver are clearly labeled but often swapped by AI.
+        """
+        import re
+        
+        # Normalize text for easier matching
+        # Replace multiple newlines with single newline to handle spacing
+        # Keep case for name extraction but use case-insensitive matching for labels
+        lines = text.split('\n')
+        
+        # Regex patterns for OPay and common apps
+        # We look for the Label, then capture the text on the SAME line or NEXT line.
+        patterns = {
+            "sender": [
+                r"Sender Details\s*[:\-\n]?\s*([A-Za-z\s\.]+)",
+                r"Sender\s*[:\-\n]?\s*([A-Za-z\s\.]+)",
+                r"From\s*[:\-\n]?\s*([A-Za-z\s\.]+)"
+            ],
+            "beneficiary": [
+                r"Recipient Details\s*[:\-\n]?\s*([A-Za-z\s\.]+)",
+                r"Beneficiary\s*[:\-\n]?\s*([A-Za-z\s\.]+)",
+                r"Receiver\s*[:\-\n]?\s*([A-Za-z\s\.]+)",
+                r"To\s*[:\-\n]?\s*([A-Za-z\s\.]+)"
+            ]
+        }
+        
+        # Helper to find match
+        def find_value(type_patterns):
+            for pattern in type_patterns:
+                # Search the whole text? Or iterate lines?
+                # Text usually comes from OCR with newlines.
+                # Let's try finding the LABEL, then looking at immediate context.
+                
+                # regex that matches "Label: Value" or "Label \n Value"
+                # (?i) = case insensitive flag
+                # \s* = optional whitespace
+                # ([^\n]+) = capture rest of line or next non-empty line?
+                
+                # Better approach: Iterate lines to find label, grab next non-empty line or same line
+                for i, line in enumerate(lines):
+                    clean_line = line.strip().lower()
+                    
+                    # Check if line contains label
+                    # Remove " Details" to match "Sender" or "Sender Details"
+                    label_key = pattern.split(r"\s")[0].lower().replace("\\", "") # approximate extraction of "sender" from regex
+                    
+                    if "sender" in pattern.lower() and ("sender details" in clean_line or "sender:" in clean_line):
+                        # Found label. Correct value is likely here or next line.
+                        # Check if value is on same line: "Sender Details: John Doe"
+                        parts = line.split(":", 1)
+                        if len(parts) > 1 and parts[1].strip():
+                            val = parts[1].strip()
+                            # Check if it's just "Details" or empty
+                            if val.lower() not in ["details", "name", "bank"]: 
+                                return val
+                                
+                        # Else check next lines
+                        if i + 1 < len(lines):
+                            next_line = lines[i+1].strip()
+                            if next_line and len(next_line) > 3: # Avoid grabbing "Amount" or "Date"
+                                return next_line
+                                
+                    if "recipient" in pattern.lower() and ("recipient details" in clean_line or "beneficiary" in clean_line):
+                        parts = line.split(":", 1)
+                        if len(parts) > 1 and parts[1].strip():
+                             val = parts[1].strip()
+                             if val.lower() not in ["details", "name", "bank"]:
+                                 return val
+                        if i + 1 < len(lines):
+                            next_line = lines[i+1].strip()
+                            if next_line:
+                                return next_line
+                                
+            return None
+
+        # Execute extraction
+        strict_sender = find_value(patterns["sender"])
+        strict_beneficiary = find_value(patterns["beneficiary"])
+        
+        # Override if found
+        if strict_sender:
+            logger.info(f"STRICT OCR: Overriding Sender with '{strict_sender}'")
+            parsed_data["sender_name"] = strict_sender
+            
+        if strict_beneficiary:
+            logger.info(f"STRICT OCR: Overriding Beneficiary with '{strict_beneficiary}'")
+            parsed_data["beneficiary_name"] = strict_beneficiary
     
     def extract_from_text(self, text: str) -> Dict[str, Any]:
         """
