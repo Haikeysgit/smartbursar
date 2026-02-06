@@ -298,14 +298,10 @@ with get_db_context() as db:
     
     if school:
         # Header with Edit button
-        col_header, col_btn = st.columns([3, 1])
-        with col_header:
-            st.caption("Bank details used for OCR verification")
-        with col_btn:
-            if not st.session_state["edit_school_info"]:
-                if st.button("✏️ Edit Details", use_container_width=True):
-                    st.session_state["edit_school_info"] = True
-                    st.rerun()
+        if not st.session_state["edit_school_info"]:
+            if st.button("Edit Details"):
+                st.session_state["edit_school_info"] = True
+                st.rerun()
         
         if st.session_state["edit_school_info"]:
             # EDIT MODE - Show form with input fields
@@ -347,11 +343,10 @@ with get_db_context() as db:
                         help="CRITICAL: Must match bank statement exactly for OCR"
                     )
                 
-                st.warning("⚠️ **Account Name** must match your bank statement exactly for receipt verification to work!")
                 
                 col_save, col_cancel = st.columns(2)
                 with col_save:
-                    save_btn = st.form_submit_button("💾 Save Changes", type="primary", use_container_width=True)
+                    save_btn = st.form_submit_button("Save Changes", type="primary", use_container_width=True)
                 with col_cancel:
                     cancel_btn = st.form_submit_button("Cancel", use_container_width=True)
                 
@@ -375,7 +370,7 @@ with get_db_context() as db:
                             db.commit()
                             
                             st.session_state["edit_school_info"] = False
-                            st.success("✅ School information updated!")
+                            st.success("School information updated!")
                             st.rerun()
                     except Exception as e:
                         st.error(f"Error saving: {e}")
