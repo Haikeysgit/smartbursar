@@ -220,6 +220,27 @@ class VerificationPipeline:
             extracted_beneficiary = str(raw_beneficiary).lower()
             extracted_sender = str(raw_sender).lower()
             
+            # --- STRICT VALIDATION: Bank & Account Number Check ---
+            # To prevent "Self-Payment" False Positives (where Sender Name == School Account Name),
+            # we MUST verify the Bank Name or Account Number digits exist in the receipt.
+            
+            official_bank = school.bank_name.lower().strip()
+            official_acc = school.account_number.strip()
+            official_acc_last4 = official_acc[-4:] if len(official_acc) >= 4 else "999999"
+            
+            # Check Extracted Data (and Raw Text if available)
+            extracted_bank = str(extraction.get("bank_name", "")).lower()
+            extracted_acc = str(extraction.get("account_number", "")).replace(" ", "")
+            raw_text_blob = str(extraction).lower() # Fallback: search everywhere
+            
+            bank_match = (official_bank in extracted_bank) or (official_bank in raw_text_blob)
+            acc_match = (official_acc_last4 in extracted_acc) or (official_acc_last4 in raw_text_blob)
+            
+            is_valid_beneficiary_details = bank_match or acc_match
+            
+            if not is_valid_beneficiary_details:
+                logger.warning(f"STRICT CHECK FAIL: Name might match, but Bank/Account details do not. {official_bank} vs {extracted_bank}")
+
             # --- LAYER 1: PERFECT MATCH (Beneficiary) ---
             
             is_perfect_match = False
@@ -232,8 +253,12 @@ class VerificationPipeline:
             elif account_name_key and account_name_key in extracted_beneficiary:
                 is_perfect_match = True
             
-            # REMOVED: Check 3 (Sender Match) - This caused outgoing transfers to verify!
-            # We strictly only care if the School is the BENEFICIARY.
+            # CRITICAL OVERRIDE: Downgrade if details mismatch
+            flagged_for_review = False
+            if is_perfect_match and not is_valid_beneficiary_details:
+                is_perfect_match = False
+                flagged_for_review = True
+                logger.info("Downgrading verification: Name matched but Bank Details missing/mismatch.")
                 
             # --- LAYER 2: CONTEXT MATCH (Amount + Parent) ---
             # Parent is already valid (Gatekeeper). Check Amount.
@@ -243,7 +268,7 @@ class VerificationPipeline:
             # Allow slight variance or exact match? Exact match or matches outstanding.
             # "Does extracted_amount match student_outstanding_balance (approximate)?"
             is_context_match = False
-            if abs(extracted_amount - outstanding) < 1000: # 1000 naira tolerance? Or exact?
+            if abs(extracted_amount - outstanding) < 1000: # 1000 naira tolerance
                  is_context_match = True
             
             # --- DECISION ---
@@ -254,12 +279,16 @@ class VerificationPipeline:
                 status = TransactionStatus.VERIFIED
                 auto_approved = True
                 verification_note = "Auto-Approved: Beneficiary Match"
-            elif is_context_match:
+            elif is_context_match and is_valid_beneficiary_details:
+                # Also enforce details for context match to be safe
                 status = TransactionStatus.VERIFIED
                 auto_approved = True
                 verification_note = "Auto-Approved: Context Match (Amount)"
             else:
-                verification_note = "Manual Review: Yellow Flag"
+                if flagged_for_review:
+                    verification_note = "⚠️ Flagged: Name Matches, but Bank Details differ."
+                else:
+                    verification_note = "Manual Review: Standard"
 
             # Create Transaction
             balance_before = student.fees_total_due - student.amount_paid
@@ -353,15 +382,24 @@ class VerificationPipeline:
                 # Notify Admin
                 admin_phone = self._get_admin_phone(school)
                 if admin_phone:
+                    # Determine Alert Header
+                    header = "👮‍♂️ **Admin Action Needed**"
+                    warning = ""
+                    
+                    if "Flagged" in verification_note:
+                        header = "⚠️ **Flagged Receipt**"
+                        warning = f"\nreason: {verification_note}\n"
+                    
                     # Clearer Admin Message
                     whatsapp_client.send_text(
                         admin_phone,
-                        f"👮‍♂️ **Admin Action Needed**\n"
+                        f"{header}\n"
                         f"Payment Verification Request\n\n"
                         f"Student: {student.full_name}\n"
                         f"Amount: ₦{extracted_amount:,.2f}\n"
                         f"Bank: {extraction.get('bank_name', 'Unknown')}\n"
-                        f"Sender: {extraction.get('sender_name', 'Unknown')}\n\n"
+                        f"Sender: {extraction.get('sender_name', 'Unknown')}\n"
+                        f"{warning}\n"
                         f"Reply 'Confirmed' to approve or 'Fake' to reject."
                     )
                     
@@ -370,7 +408,7 @@ class VerificationPipeline:
                         admin_phone,
                         file_path,
                         filename="receipt_proof.jpg",
-                        caption="📎 Proof of Payment"
+                        caption=f"📎 Proof of Payment ({verification_note})"
                     )
                     
                     # Add to Pending List
