@@ -205,11 +205,34 @@ class VerificationPipeline:
             school_name_key = school.school_name.lower().split()[0]
             account_name_key = school.account_name.lower() if school.account_name else ""
             
+            # Build list of ALL valid identifiers for this school
+            valid_school_identifiers = set()
+            # Add full school name (lowercase)
+            valid_school_identifiers.add(school.school_name.lower().strip())
+            # Add each word of school name (min 3 chars to avoid "the", "of", etc.)
+            for word in school.school_name.lower().split():
+                if len(word) >= 3:
+                    valid_school_identifiers.add(word)
+            # Add full account name if exists
+            if school.account_name:
+                valid_school_identifiers.add(school.account_name.lower().strip())
+                # Add each word of account name
+                for word in school.account_name.lower().split():
+                    if len(word) >= 3:
+                        valid_school_identifiers.add(word)
+            
+            logger.info(f"Valid School Identifiers: {valid_school_identifiers}")
+            
             # CHECK: If Sender contains school name but Beneficiary doesn't - they're swapped!
-            sender_has_school = (school_name_key in str(raw_sender).lower() or 
-                                (account_name_key and account_name_key in str(raw_sender).lower()))
-            beneficiary_has_school = (school_name_key in str(raw_beneficiary).lower() or 
-                                     (account_name_key and account_name_key in str(raw_beneficiary).lower()))
+            def has_school_identifier(text):
+                text_lower = str(text).lower()
+                for identifier in valid_school_identifiers:
+                    if identifier in text_lower:
+                        return True
+                return False
+            
+            sender_has_school = has_school_identifier(raw_sender)
+            beneficiary_has_school = has_school_identifier(raw_beneficiary)
             
             if sender_has_school and not beneficiary_has_school:
                 logger.info(f"SWAP DETECTED: Sender '{raw_sender}' has school name, swapping with Beneficiary '{raw_beneficiary}'")
@@ -245,12 +268,8 @@ class VerificationPipeline:
             
             is_perfect_match = False
             
-            # Check 1: School Name in Beneficiary
-            if school_name_key in extracted_beneficiary:
-                is_perfect_match = True
-                
-            # Check 2: Account Name in Beneficiary (Robust check)
-            elif account_name_key and account_name_key in extracted_beneficiary:
+            # Check: Any school identifier in Beneficiary
+            if has_school_identifier(extracted_beneficiary):
                 is_perfect_match = True
             
             # CRITICAL OVERRIDE: Downgrade if details mismatch
@@ -626,8 +645,9 @@ class VerificationPipeline:
             
             # 2. Find OLDEST Pending Verification (FIFO Queue)
             # Use order_by(asc) to ensure admins verify the oldest item first.
-            pending_txn = db.query(Transaction).filter(
-                Transaction.school_id == school.id,
+            # JOIN Student to filter by school_id (Transaction doesn't have school_id directly)
+            pending_txn = db.query(Transaction).join(Student).filter(
+                Student.school_id == school.id,
                 Transaction.status == TransactionStatus.PENDING_VERIFICATION.value
             ).order_by(Transaction.created_at.asc()).first()
             
@@ -647,8 +667,8 @@ class VerificationPipeline:
             
             # Helper to check for remaining queue
             def check_remaining_queue():
-                remaining_count = db.query(Transaction).filter(
-                    Transaction.school_id == school.id,
+                remaining_count = db.query(Transaction).join(Student).filter(
+                    Student.school_id == school.id,
                     Transaction.status == TransactionStatus.PENDING_VERIFICATION.value,
                     Transaction.id != pending_txn.id # Exclude current just in case compile lag (though status update handles it)
                 ).count()
