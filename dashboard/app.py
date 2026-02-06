@@ -208,46 +208,29 @@ def get_logo_base64():
 # =============================================================================
 
 def bootstrap_admin():
-    """Auto-create or reset default admin & ABC school."""
+    """Auto-create or reset default admin. Does NOT auto-create schools."""
     with get_db_context() as db:
         # 1. SUPER ADMIN (admin@school.com)
         admin = db.query(User).filter(User.email == "admin@school.com").first()
         if not admin:
-            # Ensure Dummy School exists for context (though Super Admin isn't tied to it)
-            # FIX: School model has no 'email' field, use 'school_name' instead
-            school = db.query(School).filter(School.school_name == "SmartBursar Academy").first()
-            if not school:
-                school = School(
-                    school_code="SB-ADMIN",
-                    school_name="SmartBursar Academy",
-                    address="123 Test St",
-                    phone="08012345678", # Required field
-                    account_number="0000000000",
-                    bank_name="Test Bank",
-                    account_name="SmartBursar Academy", # Required field
-                    subscription_end_date=date.today() + timedelta(days=365) # Required field
-                )
-                db.add(school)
-                db.commit()
-                db.refresh(school)
-            
+            # Create Super Admin WITHOUT auto-creating a test school
+            # Super Admins don't need a school_id - they have access to all schools
             admin = User(
                 email="admin@school.com",
                 role="SUPER_ADMIN",
-                school_id=school.id,
+                school_id=None,  # Super Admin doesn't need a specific school
                 is_active=True
             )
             admin.set_password("password123")
             db.add(admin)
-            print("Status: Created Super Admin")
+            print("Status: Created Super Admin (without test school)")
         else:
             # Login successful, no forced reset needed.
             print("Status: Admin Exists (No Reset)")
             pass
         
-        # 2. ABC SCHOOL (REMOVED - No longer re-seeded automatically)
-        # To reset the environment, delete the database or manually re-create schools.
-        pass
+        # NOTE: Schools are no longer auto-created on startup.
+        # Deleting a school from the dashboard is now permanent.
             
         db.commit()
         return True

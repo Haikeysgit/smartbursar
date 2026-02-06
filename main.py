@@ -139,6 +139,71 @@ def logout():
     return response
 
 
+@app.get("/purge-zombie-data")
+def purge_zombie_data():
+    """
+    ONE-TIME PURGE: Delete SmartBursar Academy and orphaned test data.
+    This cleans up zombie schools and students that cause identity conflicts.
+    """
+    db = SessionLocal()
+    try:
+        from models.school import School
+        from models.student import Student
+        from models.transaction import Transaction
+        
+        results = {
+            "schools_deleted": [],
+            "students_deleted": 0,
+            "transactions_updated": 0
+        }
+        
+        # 1. Delete SmartBursar Academy / SB-ADMIN school
+        zombie_schools = db.query(School).filter(
+            (School.school_code == "SB-ADMIN") | 
+            (School.school_name.ilike("%SmartBursar Academy%"))
+        ).all()
+        
+        for school in zombie_schools:
+            # First delete all students in this school
+            students_in_school = db.query(Student).filter(Student.school_id == school.id).all()
+            for student in students_in_school:
+                # Delete transactions for this student
+                db.query(Transaction).filter(Transaction.student_id == student.id).delete()
+                db.delete(student)
+                results["students_deleted"] += 1
+            
+            results["schools_deleted"].append({
+                "id": school.id,
+                "code": school.school_code,
+                "name": school.school_name
+            })
+            db.delete(school)
+        
+        # 2. Update any stuck pending_verification transactions to cancelled
+        stuck_transactions = db.query(Transaction).filter(
+            Transaction.status == "pending_verification"
+        ).all()
+        
+        for txn in stuck_transactions:
+            txn.status = "cancelled"
+            txn.notes = (txn.notes or "") + " | Auto-cancelled by purge"
+            results["transactions_updated"] += 1
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Zombie data purged successfully!",
+            "results": results,
+            "note": "Remove this endpoint after use!"
+        }
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "error": str(e)}
+    finally:
+        db.close()
+
+
 @app.get("/debug/students")
 def debug_students():
     """Debug endpoint to see what's in the database"""
