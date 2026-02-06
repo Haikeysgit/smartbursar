@@ -90,12 +90,23 @@ def get_user_context(phone_number: str) -> Dict[str, Any]:
     else:
         variations.add(raw_phone.lstrip("+"))
     
-    formatted_phone = f"+{raw_phone}" if not raw_phone.startswith("+") else raw_phone
-    
     if formatted_phone in verification_pipeline.admin_pending:
         return {"user_type": "ADMIN", "students": [], "schools": []}
 
     with get_db_context() as db:
+        # 2. Identify if this is a School Owner (ADMIN)
+        # Search school phone numbers (robustly)
+        school_owner = db.query(School).filter(
+            (School.phone.in_(variations))
+        ).first()
+        
+        if school_owner:
+            logger.info(f"Identified sender {formatted_phone} as School Owner: {school_owner.school_name}")
+            # Ensure we return a serialized dict if schools are accessed later, but for ADMIN flow it's less critical.
+            # Best to keep it clean though.
+            return {"user_type": "ADMIN", "students": [], "schools": []}
+
+        # 3. Identify if Parent (Student Record)
         students = db.query(Student).filter(
             (Student.parent_phone_primary.in_(variations)) | 
             (Student.parent_phone_secondary.in_(variations))
