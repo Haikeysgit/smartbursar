@@ -67,11 +67,11 @@ import os
 env = os.getenv("ENVIRONMENT", "development")
 is_mock = settings.MOCK_MODE
 
+# Only show warning if in mock mode (for admin debugging)
 if is_mock:
-    st.error(f"SYSTEM IN MOCK MODE (Env: {env}) - Messages will NOT be sent to phones.")
+    st.error(f"⚠️ MOCK MODE - Messages will NOT be sent to phones.")
     st.caption("To fix: Set ENVIRONMENT=production in Render.")
-else:
-    st.info(f"SYSTEM LIVE (Env: {env}) - Messages will be delivered via WhatsApp.")
+
 
 st.title("Messages")
 
