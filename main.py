@@ -113,6 +113,32 @@ def home():
     return "SmartBursar is Active"
 
 
+@app.get("/logout")
+def logout():
+    """
+    Backend logout endpoint - clears all session cookies.
+    Frontend should redirect here, then redirect to login.
+    """
+    from fastapi.responses import RedirectResponse
+    
+    # Get dashboard URL from settings or use relative path
+    dashboard_url = os.getenv("DASHBOARD_URL", "/")
+    
+    response = RedirectResponse(url=dashboard_url, status_code=302)
+    
+    # Clear all possible session cookies
+    response.delete_cookie(key="access_token")
+    response.delete_cookie(key="session")
+    response.delete_cookie(key="smartbursar_session")
+    response.delete_cookie(key="token")
+    
+    # Also clear with various paths
+    response.delete_cookie(key="access_token", path="/")
+    response.delete_cookie(key="session", path="/")
+    
+    return response
+
+
 @app.get("/debug/students")
 def debug_students():
     """Debug endpoint to see what's in the database"""

@@ -680,12 +680,40 @@ else:
         st.markdown("---")
         
         if st.button("Sign Out", use_container_width=True):
-            # Clear session storage to prevent auto-login
-            clear_session_storage()
+            # Clear local session state
             for key in ["user_id", "email", "role", "school_id", "impersonating", "original_role", "original_school_id"]:
                 if key in st.session_state:
                     del st.session_state[key]
-            st.rerun()
+            
+            # Clear query params
+            st.query_params.clear()
+            
+            # Clear browser storage AND redirect to backend logout endpoint
+            # Backend will clear HttpOnly cookies and redirect back
+            from config.settings import settings
+            api_url = settings.APP_URL.rstrip("/")
+            
+            components.html(
+                f"""
+                <script>
+                    // 1. Clear all browser storage
+                    localStorage.removeItem('smartbursar_session');
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    
+                    // 2. Clear cookies from frontend
+                    document.cookie.split(";").forEach(function(c) {{ 
+                        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+                    }});
+                    
+                    // 3. Redirect to backend logout (clears HttpOnly cookies)
+                    window.parent.location.href = "{api_url}/logout";
+                </script>
+                """,
+                height=0,
+                width=0,
+            )
+    
     
     # MAIN CONTENT
     role = st.session_state.get("role", "SCHOOL_ADMIN")
