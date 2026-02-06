@@ -474,7 +474,7 @@ if "role" not in st.session_state:
         
         # Login Form
         with st.form("login_form"):
-            email = st.text_input("Email", placeholder="admin@school.com")
+            email = st.text_input("Email", placeholder="Enter your email")
             password = st.text_input("Password", type="password", placeholder="Enter your password")
             submit = st.form_submit_button("Sign In", use_container_width=True)
             
