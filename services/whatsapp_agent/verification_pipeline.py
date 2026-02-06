@@ -578,6 +578,11 @@ class VerificationPipeline:
         pending_ids = self.admin_pending.get(admin_phone, [])
         
         if not pending_ids:
+            whatsapp_client.send_text(
+                admin_phone,
+                "⚠️ You have no pending payments to verify.\n\n"
+                "To test the system, send a receipt picture from a different phone!"
+            )
             return {"success": False, "error": "No pending verifications for this admin"}
         
         # Get the most recent pending transaction
@@ -585,6 +590,10 @@ class VerificationPipeline:
         verification_data = self.pending_verifications.get(transaction_id)
         
         if not verification_data:
+            whatsapp_client.send_text(
+                admin_phone,
+                "⚠️ Error: Pending transaction data could not be retrieved."
+            )
             return {"success": False, "error": "Verification data not found"}
         
         # Classify admin's intent
