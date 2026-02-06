@@ -624,11 +624,12 @@ class VerificationPipeline:
                 whatsapp_client.send_text(admin_phone, "🚫 Identity Error: I cannot find which school you manage.")
                 return {"success": False, "error": "School not found"}
             
-            # 2. Find RECENT Pending Verification (Stateless)
+            # 2. Find OLDEST Pending Verification (FIFO Queue)
+            # Use order_by(asc) to ensure admins verify the oldest item first.
             pending_txn = db.query(Transaction).filter(
                 Transaction.school_id == school.id,
                 Transaction.status == TransactionStatus.PENDING_VERIFICATION.value
-            ).order_by(Transaction.created_at.desc()).first()
+            ).order_by(Transaction.created_at.asc()).first()
             
             if not pending_txn:
                 whatsapp_client.send_text(
@@ -644,6 +645,18 @@ class VerificationPipeline:
             
             student = pending_txn.student if pending_txn.student else db.query(Student).get(pending_txn.student_id)
             
+            # Helper to check for remaining queue
+            def check_remaining_queue():
+                remaining_count = db.query(Transaction).filter(
+                    Transaction.school_id == school.id,
+                    Transaction.status == TransactionStatus.PENDING_VERIFICATION.value,
+                    Transaction.id != pending_txn.id # Exclude current just in case compile lag (though status update handles it)
+                ).count()
+                
+                if remaining_count > 0:
+                    return f"\n\n⚠️ **Queue Alert:** You have {remaining_count} more pending payment(s).\nReply 'Confirmed' to approve the next one."
+                return ""
+
             # 4. ACTION
             if intent == "APPROVED":
                 # Centralized processing (updates DB, generates PDF, sends WhatsApp)
@@ -659,11 +672,14 @@ class VerificationPipeline:
                     send_pdf=True
                 )
                 
+                # Check queue AFTER processing (status changed to VERIFIED)
+                queue_msg = check_remaining_queue()
+                
                 # Confirm to admin
                 whatsapp_client.send_text(
                     admin_phone,
                     f"✅ Payment matches {student.full_name}!\n"
-                    f"Balance Updated. Parent notified."
+                    f"Balance Updated. Parent notified.{queue_msg}"
                 )
                 
                 # Cleanup in-memory (optional, just to keep it clean)
@@ -678,10 +694,13 @@ class VerificationPipeline:
                 
                 reject_payment(db, pending_txn.id)
                 
+                # Check queue AFTER processing
+                queue_msg = check_remaining_queue()
+                
                 whatsapp_client.send_text(
                     admin_phone,
                     f"⛔ Payment REJECTED.\n"
-                    f"Parent has been notified."
+                    f"Parent has been notified.{queue_msg}"
                 )
                 
                 # Send polite rejection to parent
