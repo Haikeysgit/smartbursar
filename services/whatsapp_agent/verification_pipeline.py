@@ -331,18 +331,23 @@ class VerificationPipeline:
     def _find_student_by_parent_and_school(self, db, parent_phone, school_id):
         """
         Helper to find student by parent phone.
-        Uses phone normalization to match both local (07...) and international (+234...) formats.
-        Includes DEBUG logging and raw fallback.
+        Searches multiple formats: local (070...), international (+234...), clean (234...).
         """
         from utils.phone_validator import normalize_phone_for_lookup
         
         local_format, international_format = normalize_phone_for_lookup(parent_phone)
         raw_phone = parent_phone.strip()
+        clean_international = raw_phone.replace("+", "").replace(" ", "").replace("-", "")  # 234... without +
         
-        # DEBUG: Log exactly what we're searching for
-        logger.info(f"DEBUG PHONE LOOKUP: Raw='{raw_phone}' | Local='{local_format}' | International='{international_format}' | School={school_id}")
+        # DEBUG: Log all search candidates
+        logger.info(f"DEBUG PHONE LOOKUP:")
+        logger.info(f"  Raw: '{raw_phone}'")
+        logger.info(f"  Local (070...): '{local_format}'")
+        logger.info(f"  International (+234...): '{international_format}'")
+        logger.info(f"  Clean International (234...): '{clean_international}'")
+        logger.info(f"  School ID: {school_id}")
         
-        # Attempt 1: Search with normalized formats
+        # Attempt 1: Search with normalized formats (local + international with +)
         student = db.query(Student).filter(
             (Student.parent_phone_primary == local_format) |
             (Student.parent_phone_primary == international_format) |
@@ -352,28 +357,38 @@ class VerificationPipeline:
         ).first()
         
         if student:
-            logger.info(f"DEBUG: FOUND student '{student.full_name}' with normalized search")
+            logger.info(f"DEBUG: FOUND '{student.full_name}' with normalized search")
             return student
         
-        # Attempt 2: Fallback - search with raw phone number exactly as received
-        logger.info(f"DEBUG: Normalized search failed, trying raw: '{raw_phone}'")
+        # Attempt 2: Clean international (234... without +) - THE KEY FIX
+        logger.info(f"DEBUG: Trying clean_international: '{clean_international}'")
         student = db.query(Student).filter(
-            (Student.parent_phone_primary == raw_phone) |
-            (Student.parent_phone_secondary == raw_phone) |
-            (Student.parent_phone_primary == f"+{raw_phone}") |
-            (Student.parent_phone_secondary == f"+{raw_phone}"),
+            (Student.parent_phone_primary == clean_international) |
+            (Student.parent_phone_secondary == clean_international),
             Student.school_id == school_id
         ).first()
         
         if student:
-            logger.info(f"DEBUG: FOUND student '{student.full_name}' with RAW fallback search")
+            logger.info(f"DEBUG: FOUND '{student.full_name}' with clean_international search")
             return student
         
-        # DEBUG: List all students in this school to see what's actually in DB
+        # Attempt 3: Raw fallback
+        logger.info(f"DEBUG: Trying raw: '{raw_phone}'")
+        student = db.query(Student).filter(
+            (Student.parent_phone_primary == raw_phone) |
+            (Student.parent_phone_secondary == raw_phone),
+            Student.school_id == school_id
+        ).first()
+        
+        if student:
+            logger.info(f"DEBUG: FOUND '{student.full_name}' with raw fallback")
+            return student
+        
+        # DEBUG: Show sample students if all searches fail
         all_students = db.query(Student).filter(Student.school_id == school_id).limit(5).all()
-        logger.info(f"DEBUG: No match found. Sample students in school {school_id}:")
+        logger.info(f"DEBUG: No match. Sample students in school {school_id}:")
         for s in all_students:
-            logger.info(f"  - {s.full_name}: primary='{s.parent_phone_primary}', secondary='{s.parent_phone_secondary}'")
+            logger.info(f"  - {s.full_name}: primary='{s.parent_phone_primary}'")
         
         return None
 
