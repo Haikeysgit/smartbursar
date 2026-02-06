@@ -329,11 +329,20 @@ class VerificationPipeline:
             return {"success": True}
             
     def _find_student_by_parent_and_school(self, db, parent_phone, school_id):
-        # Helper to find first student for this parent
-        formatted = f"+{parent_phone}" if not parent_phone.startswith("+") else parent_phone
+        """
+        Helper to find student by parent phone.
+        Uses phone normalization to match both local (07...) and international (+234...) formats.
+        """
+        from utils.phone_validator import normalize_phone_for_lookup
+        
+        local_format, international_format = normalize_phone_for_lookup(parent_phone)
+        
+        # Try all possible formats
         return db.query(Student).filter(
-            (Student.parent_phone_primary == formatted) | 
-            (Student.parent_phone_secondary == formatted),
+            (Student.parent_phone_primary == local_format) |
+            (Student.parent_phone_primary == international_format) |
+            (Student.parent_phone_secondary == local_format) |
+            (Student.parent_phone_secondary == international_format),
             Student.school_id == school_id
         ).first()
 

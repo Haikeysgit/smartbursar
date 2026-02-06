@@ -216,3 +216,56 @@ def get_country_from_phone(e164_phone: str) -> Optional[str]:
         return phonenumbers.region_code_for_number(parsed)
     except NumberParseException:
         return None
+
+
+# =============================================================================
+# Phone Normalization for DB Lookup
+# =============================================================================
+
+def normalize_phone_for_lookup(phone: str) -> Tuple[str, str]:
+    """
+    Normalize incoming phone number for database lookup.
+    
+    Handles the mismatch between WhatsApp format (2347040344475) 
+    and local DB format (07040344475).
+    
+    Args:
+        phone: Incoming phone number (any format)
+    
+    Returns:
+        Tuple of (local_format, international_format) for flexible matching
+        
+    Examples:
+        >>> normalize_phone_for_lookup("2347040344475")
+        ('07040344475', '+2347040344475')
+        
+        >>> normalize_phone_for_lookup("+2348012345678")
+        ('08012345678', '+2348012345678')
+        
+        >>> normalize_phone_for_lookup("08012345678")
+        ('08012345678', '+2348012345678')
+    """
+    if not phone:
+        return "", ""
+    
+    # Clean: strip whitespace, remove + and spaces
+    cleaned = phone.strip().replace("+", "").replace(" ", "").replace("-", "")
+    
+    # Convert to local format (0...)
+    if cleaned.startswith("234") and len(cleaned) > 10:
+        local_format = "0" + cleaned[3:]
+    elif cleaned.startswith("0"):
+        local_format = cleaned
+    else:
+        local_format = cleaned
+    
+    # Convert to international format (+234...)
+    if cleaned.startswith("234"):
+        international_format = "+" + cleaned
+    elif cleaned.startswith("0") and len(cleaned) >= 10:
+        international_format = "+234" + cleaned[1:]
+    else:
+        international_format = "+" + cleaned
+    
+    return local_format, international_format
+
