@@ -150,18 +150,30 @@ class VerificationPipeline:
                  whatsapp_client.send_text(parent_phone, "⚠️ Error: Student record not found.")
                  return {"success": False}
                  
-            # --- LAYER 1: PERFECT MATCH (Beneficiary) ---
-            # school_name vs extracted['beneficiary_name'] AND extracted['sender_name'] (sometimes sender/receiver swapped in OCR)
-            # Also check school.account_name!
-            
+            # --- SAFETY NET: Auto-correct sender/beneficiary swap ---
+            # OCR sometimes labels Sender as Beneficiary (and vice versa)
             raw_beneficiary = extraction.get("beneficiary_name") or ""
-            raw_sender = extraction.get("sender_name") or ""  # Sometimes OCR swaps them
+            raw_sender = extraction.get("sender_name") or ""
+            
+            school_name_key = school.school_name.lower().split()[0]
+            account_name_key = school.account_name.lower() if school.account_name else ""
+            
+            # CHECK: If Sender contains school name but Beneficiary doesn't - they're swapped!
+            sender_has_school = (school_name_key in str(raw_sender).lower() or 
+                                (account_name_key and account_name_key in str(raw_sender).lower()))
+            beneficiary_has_school = (school_name_key in str(raw_beneficiary).lower() or 
+                                     (account_name_key and account_name_key in str(raw_beneficiary).lower()))
+            
+            if sender_has_school and not beneficiary_has_school:
+                logger.info(f"SWAP DETECTED: Sender '{raw_sender}' has school name, swapping with Beneficiary '{raw_beneficiary}'")
+                raw_beneficiary, raw_sender = raw_sender, raw_beneficiary
+                extraction["beneficiary_name"] = raw_beneficiary
+                extraction["sender_name"] = raw_sender
             
             extracted_beneficiary = str(raw_beneficiary).lower()
             extracted_sender = str(raw_sender).lower()
             
-            school_name_key = school.school_name.lower().split()[0]
-            account_name_key = school.account_name.lower() if school.account_name else ""
+            # --- LAYER 1: PERFECT MATCH (Beneficiary) ---
             
             is_perfect_match = False
             
@@ -569,16 +581,60 @@ class VerificationPipeline:
                 
                 db.commit()
                 
-                # Notify parent
+                # Notify parent with PDF receipt
                 parent_phone = verification_data["parent_phone"]
-                whatsapp_client.send_text(
-                    parent_phone,
-                    f"✅ *Payment Verified!*\n\n"
-                    f"Amount: ₦{transaction.amount:,.2f}\n"
-                    f"Receipt: {transaction.receipt_number}\n"
-                    f"New Balance: ₦{(student.fees_total_due - student.amount_paid):,.2f}\n\n"
-                    "Thank you for your payment!"
-                )
+                school = db.query(School).filter(School.id == verification_data["school_id"]).first()
+                
+                try:
+                    from services.payments.receipt_generator import create_receipt_from_transaction, save_receipt_to_file
+                    from config.settings import settings
+                    import tempfile
+                    from pathlib import Path
+                    
+                    # Use /tmp for Render compatibility
+                    RECEIPTS_DIR = Path(tempfile.gettempdir()) / "receipts"
+                    RECEIPTS_DIR.mkdir(exist_ok=True)
+                    
+                    receipt_data = create_receipt_from_transaction(transaction, student, school)
+                    pdf_filename = f"receipt_{transaction.receipt_number}.pdf"
+                    pdf_path = RECEIPTS_DIR / pdf_filename
+                    
+                    save_receipt_to_file(receipt_data, pdf_path)
+                    logger.info(f"Generated receipt PDF: {pdf_path}")
+                    
+                    whatsapp_client.send_text(
+                        parent_phone,
+                        f"✅ *Payment Verified!*\n\n"
+                        f"Amount: ₦{transaction.amount:,.2f}\n"
+                        f"Student: {student.full_name}\n"
+                        f"New Balance: ₦{(student.fees_total_due - student.amount_paid):,.2f}"
+                    )
+                    
+                    # Construct Public URL and send PDF
+                    app_url = settings.APP_URL.rstrip("/")
+                    pdf_url = f"{app_url}/receipts/{pdf_filename}"
+                    
+                    whatsapp_client.send_document(
+                        parent_phone,
+                        pdf_url,
+                        filename=pdf_filename,
+                        caption=f"🧾 Receipt {transaction.receipt_number}"
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Failed to generate receipt PDF for admin confirmation: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    
+                    # Fallback: Send text only
+                    whatsapp_client.send_text(
+                        parent_phone,
+                        f"✅ *Payment Verified!*\n\n"
+                        f"Amount: ₦{transaction.amount:,.2f}\n"
+                        f"Receipt: {transaction.receipt_number}\n"
+                        f"New Balance: ₦{(student.fees_total_due - student.amount_paid):,.2f}\n\n"
+                        "Thank you for your payment!"
+                    )
                 
                 # Confirm to admin
                 whatsapp_client.send_text(
