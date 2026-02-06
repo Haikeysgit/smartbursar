@@ -190,29 +190,22 @@ def process_successful_payment(
         db.commit()
         db.refresh(txn)
     
-    # 3. Generate PDF Receipt
+        # 3. Generate PDF Receipt
     try:
-        receipt_data = create_receipt_from_transaction(txn, student, school)
+        # We still generate/save it locally for reference if needed, but we PREFER serving it dynamically
+        # to avoid multi-worker filesystem sync issues (404s).
         
-        # Define Receipts Directory (Relative to project root 'receipts')
-        # Structure: <project_root>/receipts/
-        RECEIPTS_DIR = Path(__file__).parent.parent.parent / "receipts"
-        RECEIPTS_DIR.mkdir(parents=True, exist_ok=True)
-        
-        pdf_filename = f"receipt_{txn.receipt_number}.pdf"
-        pdf_path = RECEIPTS_DIR / pdf_filename
-        
-        save_receipt_to_file(receipt_data, pdf_path)
-        print(f"[INFO] Generated Receipt PDF: {pdf_path}")
-        
-        # 4. Send WhatsApp Notification
-        # Construct Public URL
+        # Construct Public URL (Dynamic Endpoint)
         app_url = "https://smartbursar.onrender.com"
         if hasattr(settings, 'APP_URL') and settings.APP_URL:
             app_url = settings.APP_URL.rstrip("/")
             
-        pdf_url = f"{app_url}/receipts/{pdf_filename}"
+        # POINT TO DYNAMIC ENDPOINT
+        pdf_url = f"{app_url}/receipts/download/{txn.receipt_number}"
         
+        print(f"[INFO] Receipt URL: {pdf_url}")
+        
+        # 4. Send WhatsApp Notification
         # Send Text
         whatsapp_client.send_text(
             student.parent_phone_primary,
@@ -224,12 +217,12 @@ def process_successful_payment(
             f"Thank you! 🙏"
         )
         
-        # Send PDF
+        # Send PDF (WhatsApp downloads from dynamic URL)
         if send_pdf:
             whatsapp_client.send_document(
                 student.parent_phone_primary,
                 pdf_url,
-                filename=pdf_filename,
+                filename=f"receipt_{txn.receipt_number}.pdf",
                 caption=f"🧾 Receipt {txn.receipt_number}"
             )
             print(f"[INFO] Sent Receipt PDF to {student.parent_phone_primary}")

@@ -64,18 +64,21 @@ class BotConversationManager:
         }
         
         # Add instruction to AI based on intent hints
-        system_instruction = f"""You are a school fee payment assistant for {school_data.get('school_name', 'the school')}.
+        portal_status = "Available" if school_data.get("portal_url") else "Not available (Pay via Bank Transfer only)"
+        
+        system_instruction = f"""You are the official assistant for {school_data.get('school_name', 'The School')}.
+Use ONLY the following verified data to answer questions:
 
-OFFICIAL SCHOOL DATA (Use ONLY this):
+[OFFICIAL PAYMENT DETAILS]
 - Bank Name: {school_data.get('bank_name', 'Contact Admin')}
 - Account Number: {school_data.get('account_number', 'Contact Admin')}
 - Account Name: {school_data.get('account_name', 'Contact Admin')}
-- Online Portal: NOT Available (Do NOT mention website payments)
+- Portal: {portal_status}
 
-RULES:
-1. If asked for payment details, reply with the EXACT bank details above.
-2. DO NOT invent, guess, or hallucinate different account numbers.
-3. DO NOT mention "online portal" or "website" - functionality is strictly Bank Transfer or Cash.
+[RULES]
+1. If asked for account details, output the data above EXACTLY.
+2. DO NOT invent banks, URLs, or portals that are not listed above.
+3. If the data is missing, say "Please contact the school admin for details."
 
 The parent just said: "{text}"
 
@@ -85,7 +88,7 @@ Outstanding Balance: N{student_data.get('balance', 0):,.2f}
 
 If they ask about:
 - FEES/STATUS/BALANCE: Tell them the status clearly
-- PAYMENT/BANK/ACCOUNT: Give them the verified bank details above
+- PAYMENT/BANK/ACCOUNT: Give them the official payment details above
 - COMPLAINTS/HELP: Direct them to school admin
 - GREETING: Welcome them warmly
 

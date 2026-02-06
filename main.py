@@ -546,9 +546,38 @@ async def admin_trigger_test(
 
 
 # =============================================================================
-# LIGHTWEIGHT ADMIN UI (HTML)
+# RECEIPT DOWNLOAD (DYNAMIC)
 # =============================================================================
-from fastapi.responses import HTMLResponse
+
+@app.get("/receipts/download/{receipt_number}")
+def download_receipt(receipt_number: str, db: Session = Depends(get_db)):
+    """
+    Generate and stream receipt PDF on-the-fly.
+    Solves 404 issues on multi-worker deployments (Render/Heroku).
+    """
+    from fastapi.responses import StreamingResponse
+    from io import BytesIO
+    from models.transaction import Transaction
+    from services.payments.receipt_generator import create_receipt_from_transaction, generate_receipt_pdf
+    
+    # 1. Find Transaction
+    txn = db.query(Transaction).filter(Transaction.receipt_number == receipt_number).first()
+    if not txn:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+        
+    student = txn.student
+    school = student.school
+    
+    # 2. Generate PDF (Binary)
+    receipt_data = create_receipt_from_transaction(txn, student, school)
+    pdf_bytes = generate_receipt_pdf(receipt_data)
+    
+    # 3. Stream Response
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=receipt_{receipt_number}.pdf"}
+    )
 
 # =============================================================================
 # LIGHTWEIGHT ADMIN UI (HTML) - SECURED
