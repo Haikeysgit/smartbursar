@@ -603,39 +603,109 @@ class VerificationPipeline:
         reply_text: str
     ) -> Dict[str, Any]:
         """
-        Process an admin's verification reply.
-        
-        Args:
-            admin_phone: Admin's WhatsApp number
-            reply_text: Admin's reply text
-        
-        Returns:
-            Processing result dict
+        Process an admin's verification reply (STATELESS FIX).
+        Instead of relying on in-memory state, we query the DB for the 
+        latest PENDING transaction for this school.
         """
-        # Check if this admin has pending verifications
-        pending_ids = self.admin_pending.get(admin_phone, [])
-        
-        if not pending_ids:
-            whatsapp_client.send_text(
-                admin_phone,
-                "⚠️ You have no pending payments to verify.\n\n"
-                "To test the system, send a receipt picture from a different phone!"
-            )
-            return {"success": False, "error": "No pending verifications for this admin"}
-        
-        # Get the most recent pending transaction
-        transaction_id = pending_ids[-1]
-        verification_data = self.pending_verifications.get(transaction_id)
-        
-        if not verification_data:
-            whatsapp_client.send_text(
-                admin_phone,
-                "⚠️ Error: Pending transaction data could not be retrieved."
-            )
-            return {"success": False, "error": "Verification data not found"}
-        
-        # Classify admin's intent
-        intent = admin_classifier.classify(reply_text)
+        with get_db_context() as db:
+            # 1. Identify School(s) managed by this Admin
+            # Normalize admin phone for lookup
+            clean_admin = admin_phone.replace("+", "").replace(" ", "").replace("-", "")
+            
+            # Simple fuzzy lookup on phone or admin_whatsapp_number
+            # Check primary phone
+            school = db.query(School).filter(
+                (School.phone.contains(clean_admin[-10:])) |
+                (School.admin_whatsapp_number.contains(clean_admin[-10:]))
+            ).first()
+            
+            if not school:
+                logger.warning(f"Admin reply from {admin_phone} but no school found.")
+                whatsapp_client.send_text(admin_phone, "🚫 Identity Error: I cannot find which school you manage.")
+                return {"success": False, "error": "School not found"}
+            
+            # 2. Find RECENT Pending Verification (Stateless)
+            pending_txn = db.query(Transaction).filter(
+                Transaction.school_id == school.id,
+                Transaction.status == TransactionStatus.PENDING_VERIFICATION.value
+            ).order_by(Transaction.created_at.desc()).first()
+            
+            if not pending_txn:
+                whatsapp_client.send_text(
+                    admin_phone,
+                    "⚠️ You have no pending payments to verify.\n\n"
+                    "If you already replied, the payment might be processed."
+                )
+                return {"success": False, "error": "No pending verifications"}
+            
+            # 3. Classify admin's intent
+            intent = admin_classifier.classify(reply_text)
+            logger.info(f"Admin Intent for Txn #{pending_txn.id}: {intent} (Text: {reply_text})")
+            
+            student = pending_txn.student if pending_txn.student else db.query(Student).get(pending_txn.student_id)
+            
+            # 4. ACTION
+            if intent == "APPROVED":
+                # Centralized processing (updates DB, generates PDF, sends WhatsApp)
+                from services.payments.payment_recorder import process_successful_payment
+                
+                # Check for duplicate processing? process_successful_payment handles it?
+                # It's idempotent if status is VERIFIED, but we are in pending_verification.
+                
+                process_successful_payment(
+                    db, 
+                    pending_txn.id, 
+                    verified_by_id=None,
+                    send_pdf=True
+                )
+                
+                # Confirm to admin
+                whatsapp_client.send_text(
+                    admin_phone,
+                    f"✅ Payment matches {student.full_name}!\n"
+                    f"Balance Updated. Parent notified."
+                )
+                
+                # Cleanup in-memory (optional, just to keep it clean)
+                if pending_txn.id in self.pending_verifications:
+                    del self.pending_verifications[pending_txn.id]
+                
+                return {"success": True, "status": "APPROVED"}
+                
+            elif intent == "REJECTED":
+                # Reject logic
+                from services.payments.payment_recorder import reject_payment
+                
+                reject_payment(db, pending_txn.id)
+                
+                whatsapp_client.send_text(
+                    admin_phone,
+                    f"⛔ Payment REJECTED.\n"
+                    f"Parent has been notified."
+                )
+                
+                # Send polite rejection to parent
+                whatsapp_client.send_text(
+                    student.parent_phone_primary,
+                    f"❌ Payment Verification Failed\n\n"
+                    f"The receipt for ₦{pending_txn.amount:,.2f} was rejected by the school admin.\n"
+                    f"Reason: Invalid or blurry receipt.\n\n"
+                    f"Please contact the school office if this is a mistake."
+                )
+                
+                if pending_txn.id in self.pending_verifications:
+                    del self.pending_verifications[pending_txn.id]
+                    
+                return {"success": True, "status": "REJECTED"}
+                
+            else:
+                # Ambiguous
+                whatsapp_client.send_text(
+                    admin_phone,
+                    "🤖 I didn't understand that.\n"
+                    "Reply 'Confirmed' to approve or 'Fake' to reject."
+                )
+                return {"success": False, "error": "Ambiguous intent"}
         
         if intent == "UNKNOWN":
             whatsapp_client.send_text(
