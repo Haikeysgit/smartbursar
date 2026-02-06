@@ -436,7 +436,7 @@ with st.expander("🛠️ Admin Tools (Use with Caution)", expanded=False):
                 students_found = []
                 for pattern in patterns:
                     matches = db.query(Student).filter(
-                        Student.parent_phone.contains(pattern[-10:])
+                        Student.parent_phone_primary.contains(pattern[-10:])
                     ).all()
                     students_found.extend(matches)
                 

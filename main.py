@@ -238,14 +238,14 @@ def scrub_admin_phone(phone: str):
         
         for pattern in search_patterns:
             students = db.query(Student).filter(
-                Student.parent_phone.contains(pattern[-10:])  # Last 10 digits
+                Student.parent_phone_primary.contains(pattern[-10:])  # Last 10 digits
             ).all()
             
             for student in students:
                 results["students_deleted"].append({
                     "id": student.id,
                     "name": student.full_name,
-                    "parent_phone": student.parent_phone,
+                    "parent_phone": student.parent_phone_primary,
                     "school_id": student.school_id
                 })
                 
