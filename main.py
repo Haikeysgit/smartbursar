@@ -139,39 +139,6 @@ def logout():
     return response
 
 
-@app.get("/patch-newmans")
-def patch_newmans_school():
-    """
-    ONE-TIME PATCH: Update Newmans School account_name.
-    Hit this endpoint once, then remove it.
-    """
-    db = SessionLocal()
-    try:
-        from models.school import School
-        
-        school = db.query(School).filter(
-            School.school_name.ilike("%newmans%")
-        ).first()
-        
-        if not school:
-            return {"error": "Newmans School not found"}
-        
-        old_value = school.account_name
-        new_value = "IMISIOLUWA FAITH OBASEKI"
-        
-        school.account_name = new_value
-        db.commit()
-        
-        return {
-            "success": True,
-            "school_name": school.school_name,
-            "old_account_name": old_value,
-            "new_account_name": new_value,
-            "message": "PATCH COMPLETE - Delete this endpoint now!"
-        }
-    finally:
-        db.close()
-
 @app.get("/debug/students")
 def debug_students():
     """Debug endpoint to see what's in the database"""
