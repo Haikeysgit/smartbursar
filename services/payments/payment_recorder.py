@@ -285,7 +285,7 @@ def reject_payment(
     if not transaction:
         return None, "Transaction not found or access denied"
     
-    if transaction.status != TransactionStatus.PENDING:
+    if transaction.status not in [TransactionStatus.PENDING, TransactionStatus.PENDING_VERIFICATION]:
         return None, f"Transaction is already {transaction.status}"
     
     # Update transaction

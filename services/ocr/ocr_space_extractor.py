@@ -226,52 +226,59 @@ Rules:
             ]
         }
         
+        # Reserved keywords to SKIP when looking for names
+        RESERVED_KEYWORDS = [
+            "transaction no", "transaction id", "session id", "reference", 
+            "amount", "date", "time", "status", "bank", "details", "name",
+            "account", "number", "fee", "charge", "balance", "total"
+        ]
+        
+        def is_valid_name(text):
+            """Check if text is a valid person name (not a keyword or number)."""
+            if not text:
+                return False
+            clean = text.strip().lower()
+            # Skip if it's a reserved keyword
+            for keyword in RESERVED_KEYWORDS:
+                if keyword in clean:
+                    return False
+            # Skip if it's mostly digits (like Transaction No)
+            if clean.replace(" ", "").replace("-", "").isdigit():
+                return False
+            # Skip if too short (like "To" or "ID")
+            if len(clean) < 4:
+                return False
+            return True
+        
         # Helper to find match
         def find_value(type_patterns):
             for pattern in type_patterns:
-                # Search the whole text? Or iterate lines?
-                # Text usually comes from OCR with newlines.
-                # Let's try finding the LABEL, then looking at immediate context.
-                
-                # regex that matches "Label: Value" or "Label \n Value"
-                # (?i) = case insensitive flag
-                # \s* = optional whitespace
-                # ([^\n]+) = capture rest of line or next non-empty line?
-                
-                # Better approach: Iterate lines to find label, grab next non-empty line or same line
                 for i, line in enumerate(lines):
                     clean_line = line.strip().lower()
                     
-                    # Check if line contains label
-                    # Remove " Details" to match "Sender" or "Sender Details"
-                    label_key = pattern.split(r"\s")[0].lower().replace("\\", "") # approximate extraction of "sender" from regex
-                    
-                    if "sender" in pattern.lower() and ("sender details" in clean_line or "sender:" in clean_line):
-                        # Found label. Correct value is likely here or next line.
-                        # Check if value is on same line: "Sender Details: John Doe"
+                    if "sender" in pattern.lower() and ("sender details" in clean_line or "sender:" in clean_line or clean_line == "sender"):
+                        # Check same line after colon
                         parts = line.split(":", 1)
-                        if len(parts) > 1 and parts[1].strip():
-                            val = parts[1].strip()
-                            # Check if it's just "Details" or empty
-                            if val.lower() not in ["details", "name", "bank"]: 
-                                return val
+                        if len(parts) > 1 and is_valid_name(parts[1]):
+                            return parts[1].strip()
                                 
-                        # Else check next lines
-                        if i + 1 < len(lines):
-                            next_line = lines[i+1].strip()
-                            if next_line and len(next_line) > 3: # Avoid grabbing "Amount" or "Date"
-                                return next_line
-                                
-                    if "recipient" in pattern.lower() and ("recipient details" in clean_line or "beneficiary" in clean_line):
+                        # Check NEXT 2 LINES for a valid name
+                        for offset in [1, 2]:
+                            if i + offset < len(lines):
+                                next_line = lines[i + offset].strip()
+                                if is_valid_name(next_line):
+                                    return next_line
+                                    
+                    if "recipient" in pattern.lower() and ("recipient details" in clean_line or "beneficiary" in clean_line or clean_line == "recipient"):
                         parts = line.split(":", 1)
-                        if len(parts) > 1 and parts[1].strip():
-                             val = parts[1].strip()
-                             if val.lower() not in ["details", "name", "bank"]:
-                                 return val
-                        if i + 1 < len(lines):
-                            next_line = lines[i+1].strip()
-                            if next_line:
-                                return next_line
+                        if len(parts) > 1 and is_valid_name(parts[1]):
+                            return parts[1].strip()
+                            
+                        for offset in [1, 2]:
+                            if i + offset < len(lines):
+                                next_line = lines[i + offset].strip()
+                                if is_valid_name(next_line):
+                                    return next_line
                                 
             return None
 

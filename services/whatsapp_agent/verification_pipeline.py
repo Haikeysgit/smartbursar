@@ -692,7 +692,7 @@ class VerificationPipeline:
                 # Reject logic
                 from services.payments.payment_recorder import reject_payment
                 
-                reject_payment(db, pending_txn.id)
+                reject_payment(db, pending_txn.id, school.id, rejected_by_id=None, reason="Admin rejected via WhatsApp")
                 
                 # Check queue AFTER processing
                 queue_msg = check_remaining_queue()
