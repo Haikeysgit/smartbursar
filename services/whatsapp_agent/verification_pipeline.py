@@ -332,19 +332,50 @@ class VerificationPipeline:
         """
         Helper to find student by parent phone.
         Uses phone normalization to match both local (07...) and international (+234...) formats.
+        Includes DEBUG logging and raw fallback.
         """
         from utils.phone_validator import normalize_phone_for_lookup
         
         local_format, international_format = normalize_phone_for_lookup(parent_phone)
+        raw_phone = parent_phone.strip()
         
-        # Try all possible formats
-        return db.query(Student).filter(
+        # DEBUG: Log exactly what we're searching for
+        logger.info(f"DEBUG PHONE LOOKUP: Raw='{raw_phone}' | Local='{local_format}' | International='{international_format}' | School={school_id}")
+        
+        # Attempt 1: Search with normalized formats
+        student = db.query(Student).filter(
             (Student.parent_phone_primary == local_format) |
             (Student.parent_phone_primary == international_format) |
             (Student.parent_phone_secondary == local_format) |
             (Student.parent_phone_secondary == international_format),
             Student.school_id == school_id
         ).first()
+        
+        if student:
+            logger.info(f"DEBUG: FOUND student '{student.full_name}' with normalized search")
+            return student
+        
+        # Attempt 2: Fallback - search with raw phone number exactly as received
+        logger.info(f"DEBUG: Normalized search failed, trying raw: '{raw_phone}'")
+        student = db.query(Student).filter(
+            (Student.parent_phone_primary == raw_phone) |
+            (Student.parent_phone_secondary == raw_phone) |
+            (Student.parent_phone_primary == f"+{raw_phone}") |
+            (Student.parent_phone_secondary == f"+{raw_phone}"),
+            Student.school_id == school_id
+        ).first()
+        
+        if student:
+            logger.info(f"DEBUG: FOUND student '{student.full_name}' with RAW fallback search")
+            return student
+        
+        # DEBUG: List all students in this school to see what's actually in DB
+        all_students = db.query(Student).filter(Student.school_id == school_id).limit(5).all()
+        logger.info(f"DEBUG: No match found. Sample students in school {school_id}:")
+        for s in all_students:
+            logger.info(f"  - {s.full_name}: primary='{s.parent_phone_primary}', secondary='{s.parent_phone_secondary}'")
+        
+        return None
 
 
 
