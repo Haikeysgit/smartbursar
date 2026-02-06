@@ -588,12 +588,9 @@ class VerificationPipeline:
                 try:
                     from services.payments.receipt_generator import create_receipt_from_transaction, save_receipt_to_file
                     from config.settings import settings
-                    import tempfile
-                    from pathlib import Path
                     
-                    # Use /tmp for Render compatibility
-                    RECEIPTS_DIR = Path(tempfile.gettempdir()) / "receipts"
-                    RECEIPTS_DIR.mkdir(exist_ok=True)
+                    # Use the same RECEIPTS_DIR that's mounted as static files
+                    # This is defined at the top of this file as pathlib.Path(__file__).parent.parent.parent / "receipts"
                     
                     receipt_data = create_receipt_from_transaction(transaction, student, school)
                     pdf_filename = f"receipt_{transaction.receipt_number}.pdf"
