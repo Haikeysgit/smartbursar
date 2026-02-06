@@ -52,6 +52,53 @@ class VerificationPipeline:
         
         # Reverse lookup: admin_phone -> list of pending transaction_ids
         self.admin_pending: Dict[str, list] = {}
+        
+        # Sync with DB on startup
+        self._reload_state_from_db()
+        
+    def _reload_state_from_db(self):
+        """Restore pending state from database on restart."""
+        try:
+            with get_db_context() as db:
+                pending_txns = db.query(Transaction).filter(
+                    Transaction.status == TransactionStatus.PENDING_VERIFICATION.value
+                ).all()
+                
+                count = 0
+                for txn in pending_txns:
+                    # Get school phone (admin)
+                    school = db.query(School).get(txn.school_id)
+                    if not school:
+                        continue
+                        
+                    admin_phone = school.phone
+                    if not admin_phone.startswith("+"):
+                        admin_phone = f"+{admin_phone}"
+                    
+                    # Reconstruct metadata (as best as possible)
+                    student = db.query(Student).get(txn.student_id)
+                    student_name = student.full_name if student else "Unknown"
+                    parent_phone = student.parent_phone_primary if student else "Unknown"
+                    
+                    # Populate caches
+                    self.pending_verifications[txn.id] = {
+                        "amount": float(txn.amount),
+                        "student_name": student_name,
+                        "parent_phone": parent_phone,
+                        "school_id": txn.school_id,
+                        "receipt_url": txn.receipt_url,
+                        "notes": txn.notes or ""
+                    }
+                    
+                    if admin_phone not in self.admin_pending:
+                        self.admin_pending[admin_phone] = []
+                    
+                    self.admin_pending[admin_phone].append(txn.id)
+                    count += 1
+                
+                logger.info(f"PIPELINE: Reloaded {count} pending verifications from DB")
+        except Exception as e:
+            logger.error(f"PIPELINE: Failed to reload state from DB: {e}")
     
     # =========================================================================
     # Parent Flow: Receipt Submission
