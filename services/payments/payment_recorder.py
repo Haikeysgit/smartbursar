@@ -190,42 +190,34 @@ def process_successful_payment(
         db.commit()
         db.refresh(txn)
     
-        # 3. Generate PDF Receipt
-    try:
-        # We still generate/save it locally for reference if needed, but we PREFER serving it dynamically
-        # to avoid multi-worker filesystem sync issues (404s).
-        
-        # Construct Public URL (Dynamic Endpoint)
-        app_url = "https://smartbursar.onrender.com"
-        if hasattr(settings, 'APP_URL') and settings.APP_URL:
-            app_url = settings.APP_URL.rstrip("/")
+            # 3. Generate PDF Receipt
+        # DISABLED BY USER REQUEST (Feb 2026) - Too many timeouts/issues
+        # We will strictly use Text Confirmations for now.
+        """
+        try:
+            # Code preserved for reference:
+            app_url = "https://smartbursar.onrender.com"
+            if hasattr(settings, 'APP_URL') and settings.APP_URL:
+                app_url = settings.APP_URL.rstrip("/")
+            pdf_url = f"{app_url}/receipts/download/{txn.receipt_number}"
             
-        # POINT TO DYNAMIC ENDPOINT
-        pdf_url = f"{app_url}/receipts/download/{txn.receipt_number}"
-        
-        print(f"[INFO] Receipt URL: {pdf_url}")
+            if send_pdf:
+               # ... sending logic ...
+               pass
+        except:
+             pass
+        """
         
         # 4. Send WhatsApp Notification
-        # Send Text
+        # Send Text Only
         whatsapp_client.send_text(
             student.parent_phone_primary,
-            f"✅ *Payment Verified!*\n\n"
+            f"✅ *Payment Verified!* (Receipt: {txn.receipt_number})\n\n"
             f"Amount: ₦{txn.amount:,.2f}\n"
-            f"Ref: {txn.receipt_number}\n"
             f"Student: {student.full_name}\n"
             f"New Balance: ₦{student.balance:,.2f}\n\n"
             f"Thank you! 🙏"
         )
-        
-        # Send PDF (WhatsApp downloads from dynamic URL)
-        if send_pdf:
-            whatsapp_client.send_document(
-                student.parent_phone_primary,
-                pdf_url,
-                filename=f"receipt_{txn.receipt_number}.pdf",
-                caption=f"🧾 Receipt {txn.receipt_number}"
-            )
-            print(f"[INFO] Sent Receipt PDF to {student.parent_phone_primary}")
             
     except Exception as e:
         print(f"[ERROR] Failed to generate/send receipt: {e}")
