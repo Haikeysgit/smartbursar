@@ -824,12 +824,12 @@ else:
                     with st.expander(f"Verify: {txn.student.full_name} - N{int(txn.amount):,}", expanded=True):
                         c1, c2 = st.columns(2)
                         with c1:
-                            if st.button("✅ Approve", key=f"dash_verify_{txn.id}", use_container_width=True):
+                            if st.button("Approve", key=f"dash_verify_{txn.id}", use_container_width=True):
                                 verify_payment(db, txn.id, school_id, user_id)
                                 st.success("Verified!")
                                 st.rerun()
                         with c2:
-                            if st.button("❌ Reject", key=f"dash_reject_{txn.id}", use_container_width=True):
+                            if st.button("Reject", key=f"dash_reject_{txn.id}", use_container_width=True):
                                 reject_payment(db, txn.id, school_id, user_id, "Rejected from Dashboard")
                                 st.warning("Rejected.")
                                 st.rerun()
