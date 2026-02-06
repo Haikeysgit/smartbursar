@@ -455,16 +455,19 @@ with st.expander("🛠️ Admin Tools (Use with Caution)", expanded=False):
                         st.write(f"❌ Deleting conflict: Student '{student.full_name}' (ID: {student.id})")
                         db.delete(student)
                         count += 1
-                    
-                    # Also cancel stuck transactions
-                    stuck = db.query(Transaction).filter(Transaction.status == "pending_verification").count()
-                    if stuck > 0:
-                        db.query(Transaction).filter(Transaction.status == "pending_verification").update(
-                            {"status": "cancelled", "notes": "Auto-cancelled by admin fix"},
-                            synchronize_session=False
-                        )
-                        st.write(f"🚫 Cancelled {stuck} stuck pending transactions.")
-                    
-                    db.commit()
-                    st.success(f"✅ FIXED! Removed {count} conflicting student records. You can now reply 'Confirmed' freely.")
+                        
+                    st.success(f"✅ Removed {count} conflicting student records.")
+                
+                # ALWAYS check for stuck transactions (even if no student found)
+                stuck = db.query(Transaction).filter(Transaction.status == "pending_verification").count()
+                if stuck > 0:
+                    db.query(Transaction).filter(Transaction.status == "pending_verification").update(
+                        {"status": "cancelled", "notes": "Auto-cancelled by admin fix"},
+                        synchronize_session=False
+                    )
+                    st.warning(f"🚫 Cleared {stuck} stuck 'pending' transactions from the queue.")
+                else:
+                    st.info("Queue is clean (no stuck transactions).")
+                
+                db.commit()
 
