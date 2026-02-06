@@ -809,6 +809,34 @@ else:
             
             if pending > 0:
                 st.warning(f"You have {pending} payments awaiting verification")
+                
+                # Fetch pending transactions for quick action
+                from services.payments.payment_recorder import verify_payment, reject_payment
+                
+                pending_txns = db.query(Transaction).join(Student).filter(
+                    Student.school_id == school_id,
+                    Transaction.status == TransactionStatus.PENDING,
+                ).order_by(Transaction.date.desc()).limit(5).all()
+                
+                user_id = st.session_state.get("user_id")
+                
+                for txn in pending_txns:
+                    with st.expander(f"Verify: {txn.student.full_name} - N{int(txn.amount):,}", expanded=True):
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            if st.button("✅ Approve", key=f"dash_verify_{txn.id}", use_container_width=True):
+                                verify_payment(db, txn.id, school_id, user_id)
+                                st.success("Verified!")
+                                st.rerun()
+                        with c2:
+                            if st.button("❌ Reject", key=f"dash_reject_{txn.id}", use_container_width=True):
+                                reject_payment(db, txn.id, school_id, user_id, "Rejected from Dashboard")
+                                st.warning("Rejected.")
+                                st.rerun()
+                
+                if pending > 5:
+                    if st.button("View All Pending Payments"):
+                        st.switch_page("pages/03_payments.py")
             
             # Check for overpaid students - Flag for refund (using raw SQL to avoid ORM cache issues)
             from sqlalchemy import text
