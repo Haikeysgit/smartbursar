@@ -90,6 +90,8 @@ def get_user_context(phone_number: str) -> Dict[str, Any]:
     else:
         variations.add(raw_phone.lstrip("+"))
     
+    formatted_phone = f"+{raw_phone}" if not raw_phone.startswith("+") else raw_phone
+    
     if formatted_phone in verification_pipeline.admin_pending:
         return {"user_type": "ADMIN", "students": [], "schools": []}
 
