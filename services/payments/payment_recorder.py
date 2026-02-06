@@ -209,20 +209,18 @@ def process_successful_payment(
         """
         
         # 4. Send WhatsApp Notification
-        # Send Text Only
-        whatsapp_client.send_text(
-            student.parent_phone_primary,
-            f"✅ *Payment Verified!* (Receipt: {txn.receipt_number})\n\n"
-            f"Amount: ₦{txn.amount:,.2f}\n"
-            f"Student: {student.full_name}\n"
-            f"New Balance: ₦{student.balance:,.2f}\n\n"
-            f"Thank you! 🙏"
-        )
-            
-    except Exception as e:
-        print(f"[ERROR] Failed to generate/send receipt: {e}")
-        # We don't fail the verification if receipt sending fails, but we log it.
-        # Ideally, we might want to return a warning.
+        try:
+            # Send Text Only
+            whatsapp_client.send_text(
+                student.parent_phone_primary,
+                f"✅ *Payment Verified!* (Receipt: {txn.receipt_number})\n\n"
+                f"Amount: ₦{txn.amount:,.2f}\n"
+                f"Student: {student.full_name}\n"
+                f"New Balance: ₦{student.balance:,.2f}\n\n"
+                f"Thank you! 🙏"
+            )
+        except Exception as e:
+            print(f"[ERROR] Failed to send payment confirmation text: {e}")
     
     return txn, None
 
