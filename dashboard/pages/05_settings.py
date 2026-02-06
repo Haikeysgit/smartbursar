@@ -284,26 +284,117 @@ st.markdown("---")
 
 
 # =============================================================================
-# School Information (Read-Only Display)
+# School Information (Editable)
 # =============================================================================
 
 st.subheader("School Information")
+
+# Toggle edit mode
+if "edit_school_info" not in st.session_state:
+    st.session_state["edit_school_info"] = False
 
 with get_db_context() as db:
     school = db.query(School).filter(School.id == school_id).first()
     
     if school:
-        col1, col2 = st.columns(2)
+        # Header with Edit button
+        col_header, col_btn = st.columns([3, 1])
+        with col_header:
+            st.caption("Bank details used for OCR verification")
+        with col_btn:
+            if not st.session_state["edit_school_info"]:
+                if st.button("✏️ Edit Details", use_container_width=True):
+                    st.session_state["edit_school_info"] = True
+                    st.rerun()
         
-        with col1:
-            st.text_input("School Name", value=school.school_name, disabled=True)
-            st.text_input("School Code", value=school.school_code, disabled=True)
-            st.text_input("Owner Phone", value=school.phone, disabled=True)
+        if st.session_state["edit_school_info"]:
+            # EDIT MODE - Show form with input fields
+            with st.form("school_info_form"):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    new_school_name = st.text_input(
+                        "School Name",
+                        value=school.school_name,
+                        help="Used for OCR beneficiary matching"
+                    )
+                    new_school_code = st.text_input(
+                        "School Code",
+                        value=school.school_code,
+                        disabled=True,
+                        help="Cannot be changed"
+                    )
+                    new_phone = st.text_input(
+                        "Owner Phone",
+                        value=school.phone,
+                        help="Primary contact number"
+                    )
+                
+                with col2:
+                    new_bank_name = st.text_input(
+                        "Bank Name",
+                        value=school.bank_name,
+                        help="Bank where school account is held"
+                    )
+                    new_account_number = st.text_input(
+                        "Account Number",
+                        value=school.account_number,
+                        help="10-digit account number"
+                    )
+                    new_account_name = st.text_input(
+                        "Account Name",
+                        value=school.account_name,
+                        help="CRITICAL: Must match bank statement exactly for OCR"
+                    )
+                
+                st.warning("⚠️ **Account Name** must match your bank statement exactly for receipt verification to work!")
+                
+                col_save, col_cancel = st.columns(2)
+                with col_save:
+                    save_btn = st.form_submit_button("💾 Save Changes", type="primary", use_container_width=True)
+                with col_cancel:
+                    cancel_btn = st.form_submit_button("Cancel", use_container_width=True)
+                
+                if save_btn:
+                    try:
+                        # Validate required fields
+                        if not new_school_name.strip():
+                            st.error("School Name is required")
+                        elif not new_account_name.strip():
+                            st.error("Account Name is required")
+                        elif not new_account_number.strip():
+                            st.error("Account Number is required")
+                        else:
+                            # Update school record
+                            school.school_name = new_school_name.strip()
+                            school.phone = new_phone.strip()
+                            school.bank_name = new_bank_name.strip()
+                            school.account_number = new_account_number.strip()
+                            school.account_name = new_account_name.strip()
+                            
+                            db.commit()
+                            
+                            st.session_state["edit_school_info"] = False
+                            st.success("✅ School information updated!")
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Error saving: {e}")
+                
+                if cancel_btn:
+                    st.session_state["edit_school_info"] = False
+                    st.rerun()
         
-        with col2:
-            st.text_input("Bank Name", value=school.bank_name, disabled=True)
-            st.text_input("Account Number", value=school.account_number, disabled=True)
-            st.text_input("Account Name", value=school.account_name, disabled=True)
-        
-        st.caption("To update school information, please contact the Super Admin.")
+        else:
+            # VIEW MODE - Show static display
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.text_input("School Name", value=school.school_name, disabled=True)
+                st.text_input("School Code", value=school.school_code, disabled=True)
+                st.text_input("Owner Phone", value=school.phone, disabled=True)
+            
+            with col2:
+                st.text_input("Bank Name", value=school.bank_name, disabled=True)
+                st.text_input("Account Number", value=school.account_number, disabled=True)
+                st.text_input("Account Name", value=school.account_name, disabled=True)
 

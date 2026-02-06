@@ -680,34 +680,29 @@ else:
         st.markdown("---")
         
         if st.button("Sign Out", use_container_width=True):
-            # Clear local session state
-            for key in ["user_id", "email", "role", "school_id", "impersonating", "original_role", "original_school_id"]:
-                if key in st.session_state:
-                    del st.session_state[key]
+            # NUKE & REDIRECT: Clear everything and force redirect
             
-            # Clear query params
+            # 1. Clear ALL Streamlit session state
+            st.session_state.clear()
+            
+            # 2. Clear query params
             st.query_params.clear()
             
-            # Clear browser storage AND redirect to backend logout endpoint
-            # Backend will clear HttpOnly cookies and redirect back
-            from config.settings import settings
-            api_url = settings.APP_URL.rstrip("/")
-            
+            # 3. Nuclear option: Clear browser storage + hard redirect to root
             components.html(
-                f"""
+                """
                 <script>
-                    // 1. Clear all browser storage
-                    localStorage.removeItem('smartbursar_session');
+                    // NUKE ALL STORAGE
                     localStorage.clear();
                     sessionStorage.clear();
                     
-                    // 2. Clear cookies from frontend
-                    document.cookie.split(";").forEach(function(c) {{ 
+                    // Clear all cookies
+                    document.cookie.split(";").forEach(function(c) { 
                         document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
-                    }});
+                    });
                     
-                    // 3. Redirect to backend logout (clears HttpOnly cookies)
-                    window.parent.location.href = "{api_url}/logout";
+                    // HARD REDIRECT - forces full page reload with clean state
+                    window.parent.location.replace(window.parent.location.origin);
                 </script>
                 """,
                 height=0,
