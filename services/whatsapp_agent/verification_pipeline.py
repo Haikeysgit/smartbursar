@@ -628,66 +628,15 @@ class VerificationPipeline:
             ).first()
             
             if intent == "APPROVED":
-                # Update transaction
-                transaction.status = TransactionStatus.VERIFIED
-                transaction.verified_at = datetime.now()
+                from services.payments.payment_recorder import process_successful_payment
                 
-                # Update student's paid amount
-                student.amount_paid += transaction.amount
-                
-                db.commit()
-                
-                # Notify parent with PDF receipt
-                parent_phone = verification_data["parent_phone"]
-                school = db.query(School).filter(School.id == verification_data["school_id"]).first()
-                
-                try:
-                    from services.payments.receipt_generator import create_receipt_from_transaction, save_receipt_to_file
-                    from config.settings import settings
-                    
-                    # Use the same RECEIPTS_DIR that's mounted as static files
-                    # This is defined at the top of this file as pathlib.Path(__file__).parent.parent.parent / "receipts"
-                    
-                    receipt_data = create_receipt_from_transaction(transaction, student, school)
-                    pdf_filename = f"receipt_{transaction.receipt_number}.pdf"
-                    pdf_path = RECEIPTS_DIR / pdf_filename
-                    
-                    save_receipt_to_file(receipt_data, pdf_path)
-                    logger.info(f"Generated receipt PDF: {pdf_path}")
-                    
-                    whatsapp_client.send_text(
-                        parent_phone,
-                        f"✅ *Payment Verified!*\n\n"
-                        f"Amount: ₦{transaction.amount:,.2f}\n"
-                        f"Student: {student.full_name}\n"
-                        f"New Balance: ₦{(student.fees_total_due - student.amount_paid):,.2f}"
-                    )
-                    
-                    # Construct Public URL and send PDF
-                    app_url = settings.APP_URL.rstrip("/")
-                    pdf_url = f"{app_url}/receipts/{pdf_filename}"
-                    
-                    whatsapp_client.send_document(
-                        parent_phone,
-                        pdf_url,
-                        filename=pdf_filename,
-                        caption=f"🧾 Receipt {transaction.receipt_number}"
-                    )
-                    
-                except Exception as e:
-                    logger.error(f"Failed to generate receipt PDF for admin confirmation: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
-                    
-                    # Fallback: Send text only
-                    whatsapp_client.send_text(
-                        parent_phone,
-                        f"✅ *Payment Verified!*\n\n"
-                        f"Amount: ₦{transaction.amount:,.2f}\n"
-                        f"Receipt: {transaction.receipt_number}\n"
-                        f"New Balance: ₦{(student.fees_total_due - student.amount_paid):,.2f}\n\n"
-                        "Thank you for your payment!"
-                    )
+                # Centralized processing (updates DB, generates PDF, sends WhatsApp)
+                process_successful_payment(
+                    db, 
+                    transaction.id, 
+                    verified_by_id=None,
+                    send_pdf=True
+                )
                 
                 # Confirm to admin
                 whatsapp_client.send_text(

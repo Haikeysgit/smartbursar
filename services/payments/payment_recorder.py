@@ -142,6 +142,106 @@ def record_payment(
 # Payment Verification
 # =============================================================================
 
+# =============================================================================
+# Payment Verification (Centralized)
+# =============================================================================
+
+def process_successful_payment(
+    db: Session,
+    transaction_id: int,
+    verified_by_id: Optional[int] = None,
+    send_pdf: bool = True
+) -> Tuple[Transaction, Optional[str]]:
+    """
+    Single Source of Truth for processing a successful payment.
+    
+    Actions:
+    1. Update Transaction Status -> VERIFIED
+    2. Update Student Balance (decrease debt)
+    3. Generate PDF Receipt
+    4. Send WhatsApp Notification (Text + PDF)
+    """
+    from pathlib import Path
+    from services.payments.receipt_generator import create_receipt_from_transaction, save_receipt_to_file
+    from services.whatsapp_agent.whatsapp_client import whatsapp_client
+    from config.settings import settings
+    
+    # 1. Fetch Transaction
+    txn = db.query(Transaction).join(Student).filter(Transaction.id == transaction_id).first()
+    if not txn:
+        return None, "Transaction not found"
+        
+    student = txn.student
+    school = student.school
+    
+    # 2. Update Status & Balance (Idempotent check)
+    if txn.status != TransactionStatus.VERIFIED:
+        txn.status = TransactionStatus.VERIFIED
+        txn.verified_by_id = verified_by_id
+        txn.verified_at = get_wat_now()
+        
+        # Update Balance
+        student.amount_paid += txn.amount
+        student.next_payment_sequence += 1
+        
+        if student.balance < 0:
+            student.credit_balance = abs(student.balance)
+            
+        db.commit()
+        db.refresh(txn)
+    
+    # 3. Generate PDF Receipt
+    try:
+        receipt_data = create_receipt_from_transaction(txn, student, school)
+        
+        # Define Receipts Directory (Relative to project root 'receipts')
+        # Structure: <project_root>/receipts/
+        RECEIPTS_DIR = Path(__file__).parent.parent.parent / "receipts"
+        RECEIPTS_DIR.mkdir(parents=True, exist_ok=True)
+        
+        pdf_filename = f"receipt_{txn.receipt_number}.pdf"
+        pdf_path = RECEIPTS_DIR / pdf_filename
+        
+        save_receipt_to_file(receipt_data, pdf_path)
+        print(f"[INFO] Generated Receipt PDF: {pdf_path}")
+        
+        # 4. Send WhatsApp Notification
+        # Construct Public URL
+        app_url = "https://smartbursar.onrender.com"
+        if hasattr(settings, 'APP_URL') and settings.APP_URL:
+            app_url = settings.APP_URL.rstrip("/")
+            
+        pdf_url = f"{app_url}/receipts/{pdf_filename}"
+        
+        # Send Text
+        whatsapp_client.send_text(
+            student.parent_phone_primary,
+            f"✅ *Payment Verified!*\n\n"
+            f"Amount: ₦{txn.amount:,.2f}\n"
+            f"Ref: {txn.receipt_number}\n"
+            f"Student: {student.full_name}\n"
+            f"New Balance: ₦{student.balance:,.2f}\n\n"
+            f"Thank you! 🙏"
+        )
+        
+        # Send PDF
+        if send_pdf:
+            whatsapp_client.send_document(
+                student.parent_phone_primary,
+                pdf_url,
+                filename=pdf_filename,
+                caption=f"🧾 Receipt {txn.receipt_number}"
+            )
+            print(f"[INFO] Sent Receipt PDF to {student.parent_phone_primary}")
+            
+    except Exception as e:
+        print(f"[ERROR] Failed to generate/send receipt: {e}")
+        # We don't fail the verification if receipt sending fails, but we log it.
+        # Ideally, we might want to return a warning.
+    
+    return txn, None
+
+
 def verify_payment(
     db: Session,
     transaction_id: int,
@@ -150,101 +250,23 @@ def verify_payment(
     send_receipt: bool = True,
 ) -> Tuple[Transaction, Optional[str]]:
     """
-    Verify a pending payment (Admin approval).
-    
-    This is called when admin clicks "VERIFY" on a pending payment.
-    Updates student balance and optionally sends receipt to parent.
-    
-    Args:
-        db: Database session
-        transaction_id: The transaction to verify
-        school_id: School ID (for security)
-        verified_by_id: User ID of the admin verifying
-        send_receipt: If True, auto-send receipt to parent (default True)
-    
-    Returns:
-        Tuple of (Transaction, error_message)
+    Admin verifies a payment (Dashboard Wrapper).
+    Delegates to process_successful_payment.
     """
-    # Get transaction with student for security check
-    transaction = db.query(Transaction).join(Student).filter(
+    # Security Check: Ensure transaction belongs to school
+    txn = db.query(Transaction).join(Student).filter(
         Transaction.id == transaction_id,
-        Student.school_id == school_id  # CRITICAL: Tenant isolation
+        Student.school_id == school_id
     ).first()
     
-    if not transaction:
+    if not txn:
         return None, "Transaction not found or access denied"
-    
-    if transaction.status != TransactionStatus.PENDING:
-        return None, f"Transaction is already {transaction.status}"
-    
-    # Update transaction
-    transaction.status = TransactionStatus.VERIFIED
-    transaction.verified_by_id = verified_by_id
-    transaction.verified_at = get_wat_now()
-    
-    # Update student balance
-    student = transaction.student
-    student.amount_paid += transaction.amount
-    student.next_payment_sequence += 1
-    
-    # Handle overpayment
-    if student.balance < 0:
-        student.credit_balance = abs(student.balance)
-    
-    db.commit()
-    db.refresh(transaction)
-    
-    # Auto-send receipt to parent
-    if send_receipt:
-        try:
-            _send_receipt_to_parent(db, transaction, student, student.school)
-        except Exception as e:
-            # Log error but don't fail the verification
-            print(f"[WARNING] Could not send receipt: {e}")
-    
-    return transaction, None
+
+    return process_successful_payment(db, transaction_id, verified_by_id, send_pdf=send_receipt)
 
 
-def _send_receipt_to_parent(db: Session, transaction: Transaction, student: Student, school):
-    """
-    Send receipt notification to parent via WhatsApp (mock in Phase 1).
-    
-    This is called automatically after payment verification.
-    """
-    from services.messaging.mock_sender import get_message_sender
-    from services.payments.receipt_generator import create_receipt_from_transaction
-    from utils.currency import format_naira
-    from models.message_log import MessageType
-    
-    # Generate receipt message
-    message = f"""Payment Received - Thank You!
-
-Dear {student.parent_name},
-
-We have received and verified your payment for {student.full_name}.
-
-Payment Details:
-- Amount: {format_naira(transaction.amount)}
-- Receipt No: {transaction.receipt_number}
-- Date: {transaction.date.strftime('%d %B %Y')}
-- Method: {transaction.method.replace('_', ' ').title()}
-
-New Balance: {format_naira(student.balance)}
-
-Thank you for your prompt payment!
-
-{school.school_name}
-{school.phone}"""
-    
-    # Send via mock sender (prints to console in Phase 1)
-    sender = get_message_sender(db)
-    sender.send_whatsapp(
-        to_phone=student.parent_phone_primary,
-        message=message,
-        student_id=student.id,
-        school_id=school.id,
-        message_type=MessageType.RECEIPT,
-    )
+# Deprecated internal helper - removed in favor of centralized logic
+# def _send_receipt_to_parent(...)
 
 
 
