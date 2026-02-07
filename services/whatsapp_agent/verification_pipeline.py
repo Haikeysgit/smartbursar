@@ -249,20 +249,15 @@ class VerificationPipeline:
                         return True
                 return False
             
-            # --- EXPENSE DETECTION: Flag Outgoing Payments ---
-            # SECURITY FIX: If SENDER matches school name, this is an OUTGOING payment (expense)
-            # DO NOT auto-approve or swap. Flag as invalid immediately.
+            # --- POTENTIAL NAME SWAP DETECTION ---
+            # OCR sometimes mislabels sender/beneficiary on OPay receipts.
+            # Instead of auto-blocking, log a warning and forward to admin for manual review.
             sender_has_school = has_school_identifier(raw_sender)
             
             if sender_has_school:
-                logger.warning(f"🚨 OUTGOING PAYMENT DETECTED: Sender '{raw_sender}' matches school identifiers. Flagging as INVALID.")
-                whatsapp_client.send_text(
-                    parent_phone,
-                    "🚫 **Invalid Receipt**\n\n"
-                    "This appears to be an OUTGOING transfer FROM the school, not an incoming payment TO the school.\n\n"
-                    "Please send a receipt showing payment TO the school account."
-                )
-                return {"success": False, "error": "Outgoing payment detected - not a valid school fee receipt"}
+                # DISABLED AUTO-BLOCK: Forward to admin for manual confirmation
+                logger.warning(f"⚠️ POTENTIAL NAME SWAP: Sender '{raw_sender}' matches school identifiers. Forwarding to Admin for Manual Confirmation.")
+                # Continue processing - admin will review and decide
             
             extracted_beneficiary = str(raw_beneficiary).lower()
             extracted_sender = str(raw_sender).lower()
