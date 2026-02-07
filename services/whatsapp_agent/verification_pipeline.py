@@ -243,71 +243,36 @@ class VerificationPipeline:
             extracted_beneficiary = str(raw_beneficiary).lower()
             extracted_sender = str(raw_sender).lower()
             
-            # --- STRICT VALIDATION: Bank & Account Number Check ---
-            # To prevent "Self-Payment" False Positives (where Sender Name == School Account Name),
-            # we MUST verify the Bank Name or Account Number digits exist in the receipt.
+            # --- SIMPLIFIED VALIDATION: Name-Only Check ---
+            # REMOVED: Bank Name and Account Number checks (too strict, causing false mismatches)
+            # NOW: Simple name match against safe list
             
-            official_bank = school.bank_name.lower().strip()
-            official_acc = school.account_number.strip()
-            official_acc_last4 = official_acc[-4:] if len(official_acc) >= 4 else "999999"
+            # Add generic education keywords to safe list
+            valid_school_identifiers.add("education")
+            valid_school_identifiers.add("school")
+            valid_school_identifiers.add("academy")
+            valid_school_identifiers.add("college")
             
-            # Check Extracted Data (and Raw Text if available)
-            extracted_bank = str(extraction.get("bank_name", "")).lower()
-            extracted_acc = str(extraction.get("account_number", "")).replace(" ", "")
-            raw_text_blob = str(extraction).lower() # Fallback: search everywhere
+            logger.info(f"Safe List for matching: {valid_school_identifiers}")
             
-            bank_match = (official_bank in extracted_bank) or (official_bank in raw_text_blob)
-            acc_match = (official_acc_last4 in extracted_acc) or (official_acc_last4 in raw_text_blob)
-            
-            is_valid_beneficiary_details = bank_match or acc_match
-            
-            if not is_valid_beneficiary_details:
-                logger.warning(f"STRICT CHECK FAIL: Name might match, but Bank/Account details do not. {official_bank} vs {extracted_bank}")
-
-            # --- LAYER 1: PERFECT MATCH (Beneficiary) ---
-            
-            is_perfect_match = False
-            
-            # Check: Any school identifier in Beneficiary
-            if has_school_identifier(extracted_beneficiary):
-                is_perfect_match = True
-            
-            # CRITICAL OVERRIDE: Downgrade if details mismatch
-            flagged_for_review = False
-            if is_perfect_match and not is_valid_beneficiary_details:
-                is_perfect_match = False
-                flagged_for_review = True
-                logger.info("Downgrading verification: Name matched but Bank Details missing/mismatch.")
-                
-            # --- LAYER 2: CONTEXT MATCH (Amount + Parent) ---
-            # Parent is already valid (Gatekeeper). Check Amount.
+            # Extract amount for transaction
             extracted_amount = Decimal(str(extraction.get("amount", 0)))
-            outstanding = student.fees_total_due - student.amount_paid
             
-            # Allow slight variance or exact match? Exact match or matches outstanding.
-            # "Does extracted_amount match student_outstanding_balance (approximate)?"
-            is_context_match = False
-            if abs(extracted_amount - outstanding) < 1000: # 1000 naira tolerance
-                 is_context_match = True
+            # --- DECISION: Name Match = Auto-Verify, No Match = Flagged ---
+            is_name_match = has_school_identifier(extracted_beneficiary)
             
-            # --- DECISION ---
-            status = TransactionStatus.PENDING # Default: Layer 3 (Manual)
+            status = TransactionStatus.PENDING  # Default: Manual Review
             auto_approved = False
+            verification_note = "Manual Review Required"
             
-            if is_perfect_match:
+            if is_name_match:
                 status = TransactionStatus.VERIFIED
                 auto_approved = True
-                verification_note = "Auto-Approved: Beneficiary Match"
-            elif is_context_match and is_valid_beneficiary_details:
-                # Also enforce details for context match to be safe
-                status = TransactionStatus.VERIFIED
-                auto_approved = True
-                verification_note = "Auto-Approved: Context Match (Amount)"
+                verification_note = "Auto-Approved: Recipient Name Match"
+                logger.info(f"✅ AUTO-APPROVED: Recipient '{extracted_beneficiary}' matched safe list")
             else:
-                if flagged_for_review:
-                    verification_note = "⚠️ Flagged: Name Matches, but Bank Details differ."
-                else:
-                    verification_note = "Manual Review: Standard"
+                verification_note = "⚠️ Flagged: Recipient name not recognized. Sent for manual review."
+                logger.info(f"⚠️ FLAGGED: Recipient '{extracted_beneficiary}' did not match safe list")
 
             # Create Transaction
             balance_before = student.fees_total_due - student.amount_paid
@@ -643,15 +608,15 @@ class VerificationPipeline:
                 whatsapp_client.send_text(admin_phone, "🚫 Identity Error: I cannot find which school you manage.")
                 return {"success": False, "error": "School not found"}
             
-            # 2. Find OLDEST Pending Verification (FIFO Queue)
+            # 2. Find OLDEST Pending Transaction (UNIVERSAL SEARCH)
             # Use order_by(asc) to ensure admins verify the oldest item first.
             # JOIN Student to filter by school_id (Transaction doesn't have school_id directly)
-            # Check multiple possible pending statuses (DB may use different strings)
-            PENDING_STATUSES = ['pending', 'pending_verification', 'manual_verification']
+            # UNIVERSAL: Find ANY transaction that is NOT verified or rejected
+            COMPLETED_STATUSES = ['verified', 'rejected', 'cancelled']
             
             pending_txn = db.query(Transaction).join(Student).filter(
                 Student.school_id == school.id,
-                Transaction.status.in_(PENDING_STATUSES)  # Broad search for any pending type
+                ~Transaction.status.in_(COMPLETED_STATUSES)  # Universal: anything NOT completed
             ).order_by(Transaction.created_at.asc()).first()
             
             if not pending_txn:
@@ -672,7 +637,7 @@ class VerificationPipeline:
             def check_remaining_queue():
                 remaining_count = db.query(Transaction).join(Student).filter(
                     Student.school_id == school.id,
-                    Transaction.status.in_(PENDING_STATUSES),  # Use same broad search
+                    ~Transaction.status.in_(COMPLETED_STATUSES),  # Same universal search
                     Transaction.id != pending_txn.id
                 ).count()
                 
