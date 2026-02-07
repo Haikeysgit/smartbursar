@@ -200,100 +200,145 @@ Rules:
 
     def _apply_strict_opay_rules(self, text: str, parsed_data: Dict[str, Any]):
         """
-        Apply strict regex rules for OPay and similar templates where
-        Sender/Receiver are clearly labeled but often swapped by AI.
+        Apply strict ANCHOR-BASED parsing for Sender/Beneficiary extraction.
+        
+        CRITICAL: Only assign names if they follow a specific label anchor.
+        DO NOT rely on line position or guess - require explicit labels.
+        
+        Sender Anchors: "Sender", "From", "Payer", "Sender Details", "Sent by"
+        Recipient Anchors: "Beneficiary", "Receiver", "To", "Recipient", "Recipient Details", "Received by"
         """
         import re
         
-        # Normalize text for easier matching
-        # Replace multiple newlines with single newline to handle spacing
-        # Keep case for name extraction but use case-insensitive matching for labels
+        # Normalize text - split into lines for line-by-line analysis
         lines = text.split('\n')
         
-        # Regex patterns for OPay and common apps
-        # We look for the Label, then capture the text on the SAME line or NEXT line.
-        patterns = {
-            "sender": [
-                r"Sender Details\s*[:\-\n]?\s*([A-Za-z\s\.]+)",
-                r"Sender\s*[:\-\n]?\s*([A-Za-z\s\.]+)",
-                r"From\s*[:\-\n]?\s*([A-Za-z\s\.]+)"
-            ],
-            "beneficiary": [
-                r"Recipient Details\s*[:\-\n]?\s*([A-Za-z\s\.]+)",
-                r"Beneficiary\s*[:\-\n]?\s*([A-Za-z\s\.]+)",
-                r"Receiver\s*[:\-\n]?\s*([A-Za-z\s\.]+)",
-                r"To\s*[:\-\n]?\s*([A-Za-z\s\.]+)"
-            ]
-        }
-        
-        # Reserved keywords to SKIP when looking for names
-        RESERVED_KEYWORDS = [
-            "transaction no", "transaction id", "session id", "reference", 
-            "amount", "date", "time", "status", "bank", "details", "name",
-            "account", "number", "fee", "charge", "balance", "total"
+        # Define anchor patterns with priority (most specific first)
+        SENDER_ANCHORS = [
+            r"sender\s*details?\s*[:\-]?\s*",
+            r"sent\s*by\s*[:\-]?\s*",
+            r"sender\s*[:\-]?\s*",
+            r"from\s*[:\-]?\s*",
+            r"payer\s*[:\-]?\s*",
+            r"debited?\s*from\s*[:\-]?\s*",
         ]
         
-        def is_valid_name(text):
-            """Check if text is a valid person name (not a keyword or number)."""
+        RECIPIENT_ANCHORS = [
+            r"recipient\s*details?\s*[:\-]?\s*",
+            r"beneficiary\s*[:\-]?\s*",
+            r"receiver\s*[:\-]?\s*",
+            r"received?\s*by\s*[:\-]?\s*",
+            r"credited?\s*to\s*[:\-]?\s*",
+            r"to\s*[:\-]\s*",  # Require colon/dash for "to" to avoid false positives
+        ]
+        
+        # Reserved keywords/labels to skip (not actual names)
+        RESERVED_KEYWORDS = [
+            "transaction", "session", "reference", "amount", "date", "time",
+            "status", "bank", "details", "name", "account", "number", "fee",
+            "charge", "balance", "total", "transfer", "payment", "successful",
+            "pending", "failed", "completed", "id", "no", "ref"
+        ]
+        
+        def is_valid_name(text: str) -> bool:
+            """Check if text is a valid person/company name (not a keyword or number)."""
             if not text:
                 return False
-            clean = text.strip().lower()
+            clean = text.strip()
+            clean_lower = clean.lower()
+            
+            # Skip if too short
+            if len(clean) < 3:
+                return False
+                
             # Skip if it's a reserved keyword
             for keyword in RESERVED_KEYWORDS:
-                if keyword in clean:
+                if keyword == clean_lower or clean_lower.startswith(keyword + " ") or clean_lower.endswith(" " + keyword):
                     return False
-            # Skip if it's mostly digits (like Transaction No)
-            if clean.replace(" ", "").replace("-", "").isdigit():
+                    
+            # Skip if it's mostly/all digits (like Transaction No)
+            digits_only = clean.replace(" ", "").replace("-", "").replace(".", "")
+            if digits_only.isdigit():
                 return False
-            # Skip if too short (like "To" or "ID")
-            if len(clean) < 4:
+                
+            # Skip if it looks like a phone number or account number
+            if re.match(r"^[\d\+\-\s\(\)]{8,}$", clean):
                 return False
+                
+            # Should contain at least some letters
+            if not any(c.isalpha() for c in clean):
+                return False
+                
             return True
         
-        # Helper to find match
-        def find_value(type_patterns):
-            for pattern in type_patterns:
-                for i, line in enumerate(lines):
-                    clean_line = line.strip().lower()
-                    
-                    if "sender" in pattern.lower() and ("sender details" in clean_line or "sender:" in clean_line or clean_line == "sender"):
-                        # Check same line after colon
-                        parts = line.split(":", 1)
-                        if len(parts) > 1 and is_valid_name(parts[1]):
-                            return parts[1].strip()
-                                
-                        # Check NEXT 2 LINES for a valid name
-                        for offset in [1, 2]:
-                            if i + offset < len(lines):
-                                next_line = lines[i + offset].strip()
-                                if is_valid_name(next_line):
-                                    return next_line
-                                    
-                    if "recipient" in pattern.lower() and ("recipient details" in clean_line or "beneficiary" in clean_line or clean_line == "recipient"):
-                        parts = line.split(":", 1)
-                        if len(parts) > 1 and is_valid_name(parts[1]):
-                            return parts[1].strip()
-                            
-                        for offset in [1, 2]:
-                            if i + offset < len(lines):
-                                next_line = lines[i + offset].strip()
-                                if is_valid_name(next_line):
-                                    return next_line
-                                
-            return None
-
-        # Execute extraction
-        strict_sender = find_value(patterns["sender"])
-        strict_beneficiary = find_value(patterns["beneficiary"])
-        
-        # Override if found
-        if strict_sender:
-            logger.info(f"STRICT OCR: Overriding Sender with '{strict_sender}'")
-            parsed_data["sender_name"] = strict_sender
+        def extract_name_after_anchor(line: str, anchor_pattern: str, lines: list, line_idx: int) -> str:
+            """
+            Extract name that appears AFTER an anchor label.
+            Checks: (1) Same line after colon, (2) Next 1-2 lines.
+            """
+            # Try regex match on current line
+            match = re.search(anchor_pattern + r"(.+)$", line, re.IGNORECASE)
+            if match:
+                candidate = match.group(1).strip()
+                # Clean up any trailing punctuation
+                candidate = re.sub(r"[:\-,;]+$", "", candidate).strip()
+                if is_valid_name(candidate):
+                    return candidate
             
-        if strict_beneficiary:
-            logger.info(f"STRICT OCR: Overriding Beneficiary with '{strict_beneficiary}'")
-            parsed_data["beneficiary_name"] = strict_beneficiary
+            # Check if line contains ONLY the anchor (name on next line)
+            anchor_only = re.match(anchor_pattern + r"$", line.strip(), re.IGNORECASE)
+            if anchor_only or re.search(anchor_pattern.rstrip(r"\s*"), line, re.IGNORECASE):
+                # Look at next 1-2 lines for a valid name
+                for offset in [1, 2]:
+                    if line_idx + offset < len(lines):
+                        next_line = lines[line_idx + offset].strip()
+                        # Skip if next line starts with another label
+                        if any(re.match(p, next_line, re.IGNORECASE) for p in SENDER_ANCHORS + RECIPIENT_ANCHORS):
+                            break
+                        if is_valid_name(next_line):
+                            return next_line
+            
+            return None
+        
+        # Execute anchor-based extraction
+        sender_name = None
+        beneficiary_name = None
+        
+        for i, line in enumerate(lines):
+            line_clean = line.strip()
+            if not line_clean:
+                continue
+                
+            # Check for SENDER anchors
+            if not sender_name:
+                for anchor in SENDER_ANCHORS:
+                    result = extract_name_after_anchor(line_clean, anchor, lines, i)
+                    if result:
+                        sender_name = result
+                        logger.info(f"ANCHOR PARSE: Found Sender '{sender_name}' via anchor '{anchor}'")
+                        break
+            
+            # Check for RECIPIENT anchors
+            if not beneficiary_name:
+                for anchor in RECIPIENT_ANCHORS:
+                    result = extract_name_after_anchor(line_clean, anchor, lines, i)
+                    if result:
+                        beneficiary_name = result
+                        logger.info(f"ANCHOR PARSE: Found Beneficiary '{beneficiary_name}' via anchor '{anchor}'")
+                        break
+        
+        # Override parsed_data with anchor-extracted values (if found)
+        if sender_name:
+            logger.info(f"ANCHOR OVERRIDE: Setting sender_name = '{sender_name}'")
+            parsed_data["sender_name"] = sender_name
+        else:
+            logger.warning("ANCHOR PARSE: No sender name found via anchors - leaving as-is")
+            
+        if beneficiary_name:
+            logger.info(f"ANCHOR OVERRIDE: Setting beneficiary_name = '{beneficiary_name}'")
+            parsed_data["beneficiary_name"] = beneficiary_name
+        else:
+            logger.warning("ANCHOR PARSE: No beneficiary name found via anchors - leaving as-is")
     
     def extract_from_text(self, text: str) -> Dict[str, Any]:
         """
