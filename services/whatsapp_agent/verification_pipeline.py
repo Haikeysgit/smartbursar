@@ -646,9 +646,12 @@ class VerificationPipeline:
             # 2. Find OLDEST Pending Verification (FIFO Queue)
             # Use order_by(asc) to ensure admins verify the oldest item first.
             # JOIN Student to filter by school_id (Transaction doesn't have school_id directly)
+            # Check multiple possible pending statuses (DB may use different strings)
+            PENDING_STATUSES = ['pending', 'pending_verification', 'manual_verification']
+            
             pending_txn = db.query(Transaction).join(Student).filter(
                 Student.school_id == school.id,
-                Transaction.status == "pending_verification"  # Raw string - enum doesn't have this value
+                Transaction.status.in_(PENDING_STATUSES)  # Broad search for any pending type
             ).order_by(Transaction.created_at.asc()).first()
             
             if not pending_txn:
@@ -669,8 +672,8 @@ class VerificationPipeline:
             def check_remaining_queue():
                 remaining_count = db.query(Transaction).join(Student).filter(
                     Student.school_id == school.id,
-                    Transaction.status == "pending_verification",  # Raw string - enum doesn't have this value
-                    Transaction.id != pending_txn.id # Exclude current just in case compile lag (though status update handles it)
+                    Transaction.status.in_(PENDING_STATUSES),  # Use same broad search
+                    Transaction.id != pending_txn.id
                 ).count()
                 
                 if remaining_count > 0:
