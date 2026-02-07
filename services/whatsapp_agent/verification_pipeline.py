@@ -575,9 +575,12 @@ class VerificationPipeline:
             # 2. Find OLDEST Pending Transaction (UNIVERSAL SEARCH)
             # Use order_by(asc) to ensure admins verify the oldest item first.
             # JOIN Student to filter by school_id (Transaction doesn't have school_id directly)
-            # UNIVERSAL: Find ANY transaction that is NOT verified or rejected
-            # NOTE: Must match TransactionStatus enum values (UPPERCASE)
-            COMPLETED_STATUSES = ['VERIFIED', 'REJECTED', 'CANCELLED']
+            # UNIVERSAL: Find ANY transaction that is NOT completed
+            # Include BOTH uppercase (new) and lowercase (legacy) status values
+            COMPLETED_STATUSES = [
+                'VERIFIED', 'REJECTED', 'CANCELLED',  # New enum values (uppercase)
+                'verified', 'rejected', 'cancelled',  # Legacy lowercase
+            ]
             
             pending_txn = db.query(Transaction).join(Student).filter(
                 Student.school_id == school.id,
