@@ -249,36 +249,45 @@ class VerificationPipeline:
             extracted_beneficiary = str(raw_beneficiary).lower()
             extracted_sender = str(raw_sender).lower()
             
-            # --- SIMPLIFIED VALIDATION: Name-Only Check ---
-            # REMOVED: Bank Name and Account Number checks (too strict, causing false mismatches)
-            # NOW: Simple name match against safe list
-            
-            # Add generic education keywords to safe list
-            valid_school_identifiers.add("education")
-            valid_school_identifiers.add("school")
-            valid_school_identifiers.add("academy")
-            valid_school_identifiers.add("college")
-            
-            logger.info(f"Safe List for matching: {valid_school_identifiers}")
-            
-            # Extract amount for transaction
-            extracted_amount = Decimal(str(extraction.get("amount", 0)))
-            
-            # --- DECISION: Name Match = Auto-Verify, No Match = Flagged ---
-            is_name_match = has_school_identifier(extracted_beneficiary)
-            
-            status = TransactionStatus.PENDING  # Default: Manual Review
-            auto_approved = False
-            verification_note = "Manual Review Required"
-            
-            if is_name_match:
-                status = TransactionStatus.VERIFIED
-                auto_approved = True
-                verification_note = "Auto-Approved: Recipient Name Match"
-                logger.info(f"✅ AUTO-APPROVED: Recipient '{extracted_beneficiary}' matched safe list")
+            # --- STRICT ANCHOR MODE: Reject if no beneficiary found ---
+            # SECURITY: If anchor parsing failed to find a beneficiary name,
+            # DO NOT fall back to guessing. Force manual review.
+            if not raw_beneficiary or len(raw_beneficiary.strip()) < 3:
+                logger.warning("🚨 STRICT MODE: No beneficiary name found via anchor parsing. Forcing manual review.")
+                status = TransactionStatus.PENDING
+                auto_approved = False
+                verification_note = "⚠️ STRICT MODE: Could not identify recipient from receipt. Manual review required."
+                
+                # Skip auto-approval logic entirely - go straight to transaction creation
+                extracted_amount = Decimal(str(extraction.get("amount", 0)))
             else:
-                verification_note = "⚠️ Flagged: Recipient name not recognized. Sent for manual review."
-                logger.info(f"⚠️ FLAGGED: Recipient '{extracted_beneficiary}' did not match safe list")
+                # --- SIMPLIFIED VALIDATION: Name-Only Check ---
+                # Add generic education keywords to safe list
+                valid_school_identifiers.add("education")
+                valid_school_identifiers.add("school")
+                valid_school_identifiers.add("academy")
+                valid_school_identifiers.add("college")
+                
+                logger.info(f"Safe List for matching: {valid_school_identifiers}")
+                
+                # Extract amount for transaction
+                extracted_amount = Decimal(str(extraction.get("amount", 0)))
+                
+                # --- DECISION: Name Match = Auto-Verify, No Match = Flagged ---
+                is_name_match = has_school_identifier(extracted_beneficiary)
+                
+                status = TransactionStatus.PENDING  # Default: Manual Review
+                auto_approved = False
+                verification_note = "Manual Review Required"
+                
+                if is_name_match:
+                    status = TransactionStatus.VERIFIED
+                    auto_approved = True
+                    verification_note = "Auto-Approved: Recipient Name Match"
+                    logger.info(f"✅ AUTO-APPROVED: Recipient '{extracted_beneficiary}' matched safe list")
+                else:
+                    verification_note = "⚠️ Flagged: Recipient name not recognized. Sent for manual review."
+                    logger.info(f"⚠️ FLAGGED: Recipient '{extracted_beneficiary}' did not match safe list")
 
             # Create Transaction
             balance_before = student.fees_total_due - student.amount_paid
