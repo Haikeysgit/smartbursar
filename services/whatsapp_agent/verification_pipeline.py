@@ -249,52 +249,32 @@ class VerificationPipeline:
             extracted_beneficiary = str(raw_beneficiary).lower()
             extracted_sender = str(raw_sender).lower()
             
-            # --- STRICT ANCHOR MODE: Reject if no beneficiary found ---
-            # SECURITY: If anchor parsing failed to find a beneficiary name,
-            # DO NOT fall back to guessing. Force manual review.
-            if not raw_beneficiary or len(raw_beneficiary.strip()) < 3:
-                logger.warning("🚨 STRICT MODE: No beneficiary name found via anchor parsing. Forcing manual review.")
-                status = TransactionStatus.PENDING
-                auto_approved = False
-                verification_note = "⚠️ STRICT MODE: Could not identify recipient from receipt. Manual review required."
-                
-                # Skip auto-approval logic entirely - go straight to transaction creation
-                extracted_amount = Decimal(str(extraction.get("amount", 0)))
-            else:
-                # --- SIMPLIFIED VALIDATION: Name-Only Check ---
-                # Add generic education keywords to safe list
-                valid_school_identifiers.add("education")
-                valid_school_identifiers.add("school")
-                valid_school_identifiers.add("academy")
-                valid_school_identifiers.add("college")
-                
-                logger.info(f"Safe List for matching: {valid_school_identifiers}")
-                
-                # Extract amount for transaction
-                extracted_amount = Decimal(str(extraction.get("amount", 0)))
-                
-                # --- DECISION: Name Match = Auto-Verify, No Match = Flagged ---
-                is_name_match = has_school_identifier(extracted_beneficiary)
-                
-                status = TransactionStatus.PENDING  # Default: Manual Review
-                auto_approved = False
-                verification_note = "Manual Review Required"
-                
-                if is_name_match:
-                    status = TransactionStatus.VERIFIED
-                    auto_approved = True
-                    verification_note = "Auto-Approved: Recipient Name Match"
-                    logger.info(f"✅ AUTO-APPROVED: Recipient '{extracted_beneficiary}' matched safe list")
-                else:
-                    verification_note = "⚠️ Flagged: Recipient name not recognized. Sent for manual review."
-                    logger.info(f"⚠️ FLAGGED: Recipient '{extracted_beneficiary}' did not match safe list")
+            # ============================================================
+            # MANUAL MODE: AUTO-VERIFICATION DISABLED
+            # ============================================================
+            # Due to OCR reliability issues, ALL receipts are sent for
+            # manual admin review. No automatic approvals.
+            # ============================================================
+            
+            extracted_amount = Decimal(str(extraction.get("amount", 0)))
+            
+            # FORCE PENDING - Never auto-approve
+            status = TransactionStatus.PENDING
+            auto_approved = False
+            
+            # Build verification note with extracted data for admin review
+            verification_note = (
+                f"📋 MANUAL REVIEW REQUIRED\n"
+                f"Sender: {raw_sender or 'Unknown'}\n"
+                f"Recipient: {raw_beneficiary or 'Unknown'}"
+            )
+            
+            logger.info(f"📋 MANUAL MODE: Receipt sent for admin review. Amount: {extracted_amount}, Sender: {raw_sender}, Recipient: {raw_beneficiary}")
 
-            # Create Transaction
+            # Create Transaction (balance NOT updated - pending manual approval)
             balance_before = student.fees_total_due - student.amount_paid
             
-            # Update balance if auto-approved
-            if auto_approved:
-                student.amount_paid += extracted_amount
+            # DO NOT update balance - transaction is PENDING
             
             balance_after = student.fees_total_due - student.amount_paid # Recalculate
             
@@ -596,7 +576,8 @@ class VerificationPipeline:
             # Use order_by(asc) to ensure admins verify the oldest item first.
             # JOIN Student to filter by school_id (Transaction doesn't have school_id directly)
             # UNIVERSAL: Find ANY transaction that is NOT verified or rejected
-            COMPLETED_STATUSES = ['verified', 'rejected', 'cancelled']
+            # NOTE: Must match TransactionStatus enum values (UPPERCASE)
+            COMPLETED_STATUSES = ['VERIFIED', 'REJECTED', 'CANCELLED']
             
             pending_txn = db.query(Transaction).join(Student).filter(
                 Student.school_id == school.id,
