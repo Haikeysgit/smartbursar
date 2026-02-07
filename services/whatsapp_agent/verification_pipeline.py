@@ -223,7 +223,7 @@ class VerificationPipeline:
             
             logger.info(f"Valid School Identifiers: {valid_school_identifiers}")
             
-            # CHECK: If Sender contains school name but Beneficiary doesn't - they're swapped!
+            # Helper to check if text contains school identifier
             def has_school_identifier(text):
                 text_lower = str(text).lower()
                 for identifier in valid_school_identifiers:
@@ -231,14 +231,20 @@ class VerificationPipeline:
                         return True
                 return False
             
+            # --- EXPENSE DETECTION: Flag Outgoing Payments ---
+            # SECURITY FIX: If SENDER matches school name, this is an OUTGOING payment (expense)
+            # DO NOT auto-approve or swap. Flag as invalid immediately.
             sender_has_school = has_school_identifier(raw_sender)
-            beneficiary_has_school = has_school_identifier(raw_beneficiary)
             
-            if sender_has_school and not beneficiary_has_school:
-                logger.info(f"SWAP DETECTED: Sender '{raw_sender}' has school name, swapping with Beneficiary '{raw_beneficiary}'")
-                raw_beneficiary, raw_sender = raw_sender, raw_beneficiary
-                extraction["beneficiary_name"] = raw_beneficiary
-                extraction["sender_name"] = raw_sender
+            if sender_has_school:
+                logger.warning(f"🚨 OUTGOING PAYMENT DETECTED: Sender '{raw_sender}' matches school identifiers. Flagging as INVALID.")
+                whatsapp_client.send_text(
+                    parent_phone,
+                    "🚫 **Invalid Receipt**\n\n"
+                    "This appears to be an OUTGOING transfer FROM the school, not an incoming payment TO the school.\n\n"
+                    "Please send a receipt showing payment TO the school account."
+                )
+                return {"success": False, "error": "Outgoing payment detected - not a valid school fee receipt"}
             
             extracted_beneficiary = str(raw_beneficiary).lower()
             extracted_sender = str(raw_sender).lower()
@@ -309,49 +315,18 @@ class VerificationPipeline:
             db.commit()
             
             # Step 4: Feedback
-            # Step 4: Feedback
             if auto_approved:
-                # Generate PDF Receipt
-                try:
-                    from services.payments.receipt_generator import create_receipt_from_transaction, save_receipt_to_file
-                    
-                    receipt_data = create_receipt_from_transaction(transaction, student, school)
-                    pdf_filename = f"receipt_{receipt_num}.pdf"
-                    pdf_path = RECEIPTS_DIR / pdf_filename  # Make sure RECEIPTS_DIR is imported/available
-                    
-                    save_receipt_to_file(receipt_data, pdf_path)
-                    logger.info(f"Generated receipt PDF: {pdf_path}")
-                    
-                    whatsapp_client.send_text(
-                        parent_phone,
-                        f"✅ **Payment Verified!**\n\n"
-                        f"Amount: ₦{extracted_amount:,.2f}\n"
-                        f"Student: {student.full_name}\n"
-                        f"New Balance: ₦{transaction.balance_after:,.2f}"
-                    )
-                    
-
-                    # Construct Public URL
-                    from config.settings import settings
-                    app_url = settings.APP_URL.rstrip("/")
-                    pdf_url = f"{app_url}/receipts/{pdf_filename}"
-                    
-                    whatsapp_client.send_document(
-                        parent_phone,
-                        pdf_url,
-                        filename=pdf_filename,
-                        caption=f"🧾 Receipt {receipt_num}"
-                    )
-                    
-                except Exception as e:
-                    logger.error(f"Failed to generate receipt PDF: {e}")
-                    whatsapp_client.send_text(
-                        parent_phone,
-                        f"✅ **Payment Verified!**\n\n"
-                        f"Amount: ₦{extracted_amount:,.2f}\n"
-                        f"Receipt: {receipt_num}\n"
-                        f"(PDF receipt generation failed, but payment is recorded)"
-                    )
+                # SEND TEXT ONLY - PDF DISABLED (Too many timeouts/errors)
+                whatsapp_client.send_text(
+                    parent_phone,
+                    f"✅ **Payment Verified!**\n\n"
+                    f"Amount: ₦{extracted_amount:,.2f}\n"
+                    f"Student: {student.full_name}\n"
+                    f"Receipt: {receipt_num}\n"
+                    f"New Balance: ₦{transaction.balance_after:,.2f}\n\n"
+                    f"Thank you! 🙏"
+                )
+                logger.info(f"Payment verified for {student.full_name}. Receipt: {receipt_num}")
 
             else:
                 # Layer 3 Feedback (Manual Review Needed)
