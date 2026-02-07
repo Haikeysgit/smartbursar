@@ -648,7 +648,7 @@ class VerificationPipeline:
             # JOIN Student to filter by school_id (Transaction doesn't have school_id directly)
             pending_txn = db.query(Transaction).join(Student).filter(
                 Student.school_id == school.id,
-                Transaction.status == TransactionStatus.PENDING_VERIFICATION.value
+                Transaction.status == "pending_verification"  # Raw string - enum doesn't have this value
             ).order_by(Transaction.created_at.asc()).first()
             
             if not pending_txn:
@@ -669,7 +669,7 @@ class VerificationPipeline:
             def check_remaining_queue():
                 remaining_count = db.query(Transaction).join(Student).filter(
                     Student.school_id == school.id,
-                    Transaction.status == TransactionStatus.PENDING_VERIFICATION.value,
+                    Transaction.status == "pending_verification",  # Raw string - enum doesn't have this value
                     Transaction.id != pending_txn.id # Exclude current just in case compile lag (though status update handles it)
                 ).count()
                 
