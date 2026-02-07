@@ -619,17 +619,48 @@ class VerificationPipeline:
             
             student = pending_txn.student if pending_txn.student else db.query(Student).get(pending_txn.student_id)
             
-            # Helper to check for remaining queue
+            # Helper to check remaining queue AND preview next transaction
             def check_remaining_queue():
+                # Count remaining pending transactions
                 remaining_count = db.query(Transaction).join(Student).filter(
                     Student.school_id == school.id,
-                    ~Transaction.status.in_(COMPLETED_STATUSES),  # Same universal search
+                    ~Transaction.status.in_(COMPLETED_STATUSES),
                     Transaction.id != pending_txn.id
                 ).count()
                 
-                if remaining_count > 0:
-                    return f"\n\n⚠️ **Queue Alert:** You have {remaining_count} more pending payment(s).\nReply 'Confirmed' to approve the next one."
-                return ""
+                if remaining_count == 0:
+                    return "\n\n✅ You are all caught up! No pending payments."
+                
+                # Fetch the NEXT transaction in line (FIFO - oldest first)
+                next_txn = db.query(Transaction).join(Student).filter(
+                    Student.school_id == school.id,
+                    ~Transaction.status.in_(COMPLETED_STATUSES),
+                    Transaction.id != pending_txn.id
+                ).order_by(Transaction.created_at.asc()).first()
+                
+                if next_txn and next_txn.student:
+                    # Get sender name from notes (stored during OCR extraction)
+                    sender_name = "Unknown"
+                    if next_txn.notes:
+                        # Try to extract sender from notes
+                        for line in next_txn.notes.split("\n"):
+                            if "Sender:" in line:
+                                sender_name = line.replace("Sender:", "").strip()
+                                break
+                    
+                    student_name = next_txn.student.full_name
+                    amount = next_txn.amount
+                    
+                    return (
+                        f"\n\n⚠️ **Queue Alert:** You have {remaining_count} more pending payment(s)."
+                        f"\n\n👇 **Next Up:**"
+                        f"\n👤 Sender: {sender_name}"
+                        f"\n🎓 Student: {student_name}"
+                        f"\n💰 Amount: ₦{amount:,.2f}"
+                        f"\n\nReply 'Confirmed' or 'Fake' for this transaction."
+                    )
+                
+                return f"\n\n⚠️ **Queue Alert:** You have {remaining_count} more pending payment(s).\nReply 'Confirmed' to approve the next one."
 
             # 4. ACTION
             if intent == "APPROVED":
