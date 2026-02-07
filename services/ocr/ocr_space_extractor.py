@@ -10,6 +10,8 @@ import os
 import logging
 import json
 import base64
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any
 from pathlib import Path
 
@@ -65,6 +67,30 @@ class OCRSpaceExtractor:
         except Exception as e:
             logger.error(f"Receipt extraction failed: {e}")
             return {"error": True, "reason": f"Processing failed: {str(e)}"}
+    
+    async def extract_from_file_async(self, file_path: str) -> Dict[str, Any]:
+        """
+        Async wrapper for extract_from_file.
+        Runs the blocking OCR/Groq calls in a thread executor to prevent
+        blocking the main event loop and causing worker timeouts.
+        """
+        loop = asyncio.get_event_loop()
+        
+        # Run the blocking sync method in a thread pool
+        # This prevents the main event loop from being blocked
+        logger.info(f"🔄 ASYNC OCR: Starting extraction in executor for {file_path}")
+        
+        try:
+            result = await loop.run_in_executor(
+                None,  # Uses default ThreadPoolExecutor
+                self.extract_from_file,
+                file_path
+            )
+            logger.info(f"✅ ASYNC OCR: Extraction complete")
+            return result
+        except Exception as e:
+            logger.error(f"❌ ASYNC OCR: Executor failed: {e}")
+            return {"error": True, "reason": f"Async processing failed: {str(e)}"}
     
     def _ocr_extract(self, file_path: str) -> str:
         """Use OCR.space API to extract text from image."""

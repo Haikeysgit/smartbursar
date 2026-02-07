@@ -154,9 +154,25 @@ class VerificationPipeline:
                 whatsapp_client.send_text(parent_phone, f"❌ File error: {prepared['error']}")
                 return {"success": False, "error": prepared["error"]}
             
-            logger.info(f"PIPELINE: Starting OCR extraction")
+            logger.info(f"PIPELINE: Starting OCR extraction (ASYNC)")
+            
+            # Use async extraction to prevent event loop blocking
+            # This runs the blocking OCR/Groq calls in a thread executor
+            import asyncio
+            
             if prepared["type"] == "file":
-                extraction = receipt_extractor.extract_from_file(prepared["content"])
+                # Run async extraction - prevents worker timeout
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    extraction = loop.run_until_complete(
+                        receipt_extractor.extract_from_file_async(prepared["content"])
+                    )
+                    loop.close()
+                except Exception as async_err:
+                    logger.error(f"ASYNC extraction failed: {async_err}")
+                    # Fallback to sync if async fails
+                    extraction = receipt_extractor.extract_from_file(prepared["content"])
             else:
                 extraction = receipt_extractor.extract_from_text(prepared["content"])
             
