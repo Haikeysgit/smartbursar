@@ -60,8 +60,10 @@ class VerificationPipeline:
         """Restore pending state from database on restart."""
         try:
             with get_db_context() as db:
+                # Find any transaction that is not completed (universal search)
+                COMPLETED_STATUSES = ['VERIFIED', 'REJECTED', 'CANCELLED', 'verified', 'rejected', 'cancelled']
                 pending_txns = db.query(Transaction).filter(
-                    Transaction.status == TransactionStatus.PENDING_VERIFICATION.value
+                    ~Transaction.status.in_(COMPLETED_STATUSES)
                 ).all()
                 
                 count = 0

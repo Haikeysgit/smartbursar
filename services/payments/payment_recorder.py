@@ -285,7 +285,9 @@ def reject_payment(
     if not transaction:
         return None, "Transaction not found or access denied"
     
-    if transaction.status not in [TransactionStatus.PENDING, TransactionStatus.PENDING_VERIFICATION]:
+    # Allow rejecting ANY transaction that isn't already verified or rejected
+    # Removed strict enum check - admin should be able to reject any pending state
+    if transaction.status in [TransactionStatus.VERIFIED, TransactionStatus.REJECTED]:
         return None, f"Transaction is already {transaction.status}"
     
     # Update transaction
