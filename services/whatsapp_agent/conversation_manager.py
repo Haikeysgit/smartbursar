@@ -66,19 +66,26 @@ class BotConversationManager:
         # Add instruction to AI based on intent hints
         portal_status = "Available" if school_data.get("portal_url") else "Not available (Pay via Bank Transfer only)"
         
+        # ---- Build school bank details for the prompt ----
+        db_bank_name = school_data.get('bank_name', 'Contact Admin')
+        db_account_number = school_data.get('account_number', 'Contact Admin')
+        db_account_name = school_data.get('account_name', 'Contact Admin')
+        
         system_instruction = f"""You are the official assistant for {school_data.get('school_name', 'The School')}.
 Use ONLY the following verified data to answer questions:
 
-[OFFICIAL PAYMENT DETAILS]
-- Bank Name: {school_data.get('bank_name', 'Contact Admin')}
-- Account Number: {school_data.get('account_number', 'Contact Admin')}
-- Account Name: {school_data.get('account_name', 'Contact Admin')}
+[OFFICIAL PAYMENT DETAILS - FROM DATABASE]
+- Bank Name: {db_bank_name}
+- Account Number: {db_account_number}
+- Account Name: {db_account_name}
 - Portal: {portal_status}
 
-[RULES]
-1. If asked for account details, output the data above EXACTLY.
-2. DO NOT invent banks, URLs, or portals that are not listed above.
-3. If the data is missing, say "Please contact the school admin for details."
+[STRICT RULES]
+1. If asked for account/bank details, output EXACTLY the bank name, account number, and account name listed above. Do not change, rephrase, or guess alternatives.
+2. NEVER invent, guess, or generate bank names, account numbers, account names, or URLs that are NOT listed above. This is CRITICAL.
+3. If any of the above details show "Contact Admin" or are missing, say: "Please contact the school admin for bank details." Do NOT make up an alternative.
+4. Do NOT mention any bank name other than "{db_bank_name}".
+5. Do NOT generate any account number other than "{db_account_number}".
 
 The parent just said: "{text}"
 
@@ -88,7 +95,7 @@ Outstanding Balance: N{student_data.get('balance', 0):,.2f}
 
 If they ask about:
 - FEES/STATUS/BALANCE: Tell them the status clearly
-- PAYMENT/BANK/ACCOUNT: Give them the official payment details above
+- PAYMENT/BANK/ACCOUNT: Give them the EXACT official payment details above
 - COMPLAINTS/HELP: Direct them to school admin
 - GREETING: Welcome them warmly
 
@@ -98,6 +105,8 @@ Respond naturally and helpfully. Keep it concise (2-3 sentences max)."""
         if groq_client.is_active:
              ai_reply = groq_client.generate_message(ai_context, tone="helpful", custom_prompt=system_instruction)
              if ai_reply:
+                 # POST-PROCESSING GUARD: Check for hallucinated bank details
+                 ai_reply = self._guard_bank_details(ai_reply, db_bank_name, db_account_number, db_account_name)
                  return "AI_RESPONSE", ai_reply
         else:
              logger.warning("Groq Client inactive (missing key). Falling back.")
@@ -106,6 +115,37 @@ Respond naturally and helpfully. Keep it concise (2-3 sentences max)."""
         return "SEND_GREETING", f"👋 Hi {sender_name}, my automated brain is offline momentarily. Please contact the school admin."
         
 
+
+    def _guard_bank_details(self, ai_reply: str, db_bank: str, db_account: str, db_name: str) -> str:
+        """
+        Post-processing guard: If AI response contains account numbers
+        that don't match the DB, append the correct details.
+        """
+        import re
+        
+        # Skip guard if DB details are missing
+        if db_account in ("Contact Admin", "Unknown", ""):
+            return ai_reply
+        
+        # Look for any 10-digit number in the response (Nigerian account numbers)
+        account_pattern = re.findall(r'\b\d{10}\b', ai_reply)
+        
+        for found_number in account_pattern:
+            if found_number != db_account:
+                logger.warning(
+                    f"⚠️ HALLUCINATION DETECTED: AI generated account '{found_number}' "
+                    f"but DB has '{db_account}'. Replacing response."
+                )
+                # Replace the hallucinated response with DB-sourced details
+                return (
+                    f"Here are the official payment details:\n\n"
+                    f"🏦 Bank: {db_bank}\n"
+                    f"📄 Account Number: {db_account}\n"
+                    f"👤 Account Name: {db_name}\n\n"
+                    f"Please use these details for your transfer."
+                )
+        
+        return ai_reply
 
     def safe_analyze_intent(self, text, sender, context, name):
         """Wrapper to prevent silence on crash."""

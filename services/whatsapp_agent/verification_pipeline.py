@@ -31,7 +31,8 @@ from config.settings import generate_receipt_number
 
 from .whatsapp_client import whatsapp_client
 from .file_handler import file_handler
-from services.ocr.ocr_space_extractor import receipt_extractor
+from services.ocr.groq_vision_extractor import groq_vision_extractor
+from services.ocr.ocr_space_extractor import receipt_extractor  # Kept for text extraction only
 from .admin_classifier import admin_classifier
 
 logger = logging.getLogger(__name__)
@@ -156,34 +157,47 @@ class VerificationPipeline:
                 whatsapp_client.send_text(parent_phone, f"❌ File error: {prepared['error']}")
                 return {"success": False, "error": prepared["error"]}
             
-            logger.info(f"PIPELINE: Starting OCR extraction (ASYNC)")
+            logger.info(f"PIPELINE: Starting receipt extraction")
             
-            # Use async extraction to prevent event loop blocking
-            # This runs the blocking OCR/Groq calls in a thread executor
+            # =============================================================
+            # VISION-FIRST EXTRACTION
+            # Primary: Groq Vision (sees the image directly)
+            # Fallback: "Please resend" (NOT OCR — OCR caused name swaps)
+            # =============================================================
             import asyncio
             
             if prepared["type"] == "file":
-                # Run async extraction - prevents worker timeout
+                # Send image directly to Groq Vision
                 try:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     extraction = loop.run_until_complete(
-                        receipt_extractor.extract_from_file_async(prepared["content"])
+                        groq_vision_extractor.extract_from_file_async(prepared["content"])
                     )
                     loop.close()
                 except Exception as async_err:
-                    logger.error(f"ASYNC extraction failed: {async_err}")
+                    logger.error(f"ASYNC vision extraction failed: {async_err}")
                     # Fallback to sync if async fails
-                    extraction = receipt_extractor.extract_from_file(prepared["content"])
+                    extraction = groq_vision_extractor.extract_from_file(prepared["content"])
             else:
+                # Text-only content (e.g., DOCX) — use old text parser
                 extraction = receipt_extractor.extract_from_text(prepared["content"])
             
             logger.info(f"PIPELINE: Extraction result: {extraction}")
                 
             if extraction.get("error"):
                 reason = extraction.get("reason", "Unknown error")
+                user_msg = extraction.get("user_message", "")
                 logger.error(f"PIPELINE: Extraction error: {reason}")
-                whatsapp_client.send_text(parent_phone, f"❌ Unreadable receipt: {reason}. Please send a clearer image.")
+                
+                if reason == "rate_limited" and user_msg:
+                    # Rate limited — ask parent to resend later
+                    whatsapp_client.send_text(parent_phone, user_msg)
+                else:
+                    whatsapp_client.send_text(
+                        parent_phone, 
+                        "❌ Could not read this receipt. Please resend a clearer image."
+                    )
                 return {"success": False, "error": reason}
             
             logger.info(f"PIPELINE: Extraction successful, proceeding to verification")

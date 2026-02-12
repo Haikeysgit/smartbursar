@@ -209,10 +209,9 @@ Rules:
                     parsed = json.loads(content)
                     parsed["error"] = False
                     
-                    # --- CRITICAL FIX: OPay Strict Label Extraction ---
-                    # The LLM sometimes swaps Sender/Receiver on OPay receipts.
-                    # We run a strict regex pass to correct this if labels are found.
-                    self._apply_strict_opay_rules(text, parsed)
+                    # NOTE: Anchor-based regex override (_apply_strict_opay_rules)
+                    # was REMOVED — it caused the name swap bug on OPay receipts.
+                    # Vision extractor is now the primary parser.
                     
                     return parsed
                     
@@ -224,147 +223,11 @@ Rules:
             logger.error(f"Groq parsing failed: {e}")
             return {"error": True, "reason": "AI parsing failed"}
 
-    def _apply_strict_opay_rules(self, text: str, parsed_data: Dict[str, Any]):
-        """
-        Apply strict ANCHOR-BASED parsing for Sender/Beneficiary extraction.
-        
-        CRITICAL: Only assign names if they follow a specific label anchor.
-        DO NOT rely on line position or guess - require explicit labels.
-        
-        Sender Anchors: "Sender", "From", "Payer", "Sender Details", "Sent by"
-        Recipient Anchors: "Beneficiary", "Receiver", "To", "Recipient", "Recipient Details", "Received by"
-        """
-        import re
-        
-        # Normalize text - split into lines for line-by-line analysis
-        lines = text.split('\n')
-        
-        # Define anchor patterns with priority (most specific first)
-        SENDER_ANCHORS = [
-            r"sender\s*details?\s*[:\-]?\s*",
-            r"sent\s*by\s*[:\-]?\s*",
-            r"sender\s*[:\-]?\s*",
-            r"from\s*[:\-]?\s*",
-            r"payer\s*[:\-]?\s*",
-            r"debited?\s*from\s*[:\-]?\s*",
-        ]
-        
-        RECIPIENT_ANCHORS = [
-            r"recipient\s*details?\s*[:\-]?\s*",
-            r"beneficiary\s*[:\-]?\s*",
-            r"receiver\s*[:\-]?\s*",
-            r"received?\s*by\s*[:\-]?\s*",
-            r"credited?\s*to\s*[:\-]?\s*",
-            r"to\s*[:\-]\s*",  # Require colon/dash for "to" to avoid false positives
-        ]
-        
-        # Reserved keywords/labels to skip (not actual names)
-        RESERVED_KEYWORDS = [
-            "transaction", "session", "reference", "amount", "date", "time",
-            "status", "bank", "details", "name", "account", "number", "fee",
-            "charge", "balance", "total", "transfer", "payment", "successful",
-            "pending", "failed", "completed", "id", "no", "ref"
-        ]
-        
-        def is_valid_name(text: str) -> bool:
-            """Check if text is a valid person/company name (not a keyword or number)."""
-            if not text:
-                return False
-            clean = text.strip()
-            clean_lower = clean.lower()
-            
-            # Skip if too short
-            if len(clean) < 3:
-                return False
-                
-            # Skip if it's a reserved keyword
-            for keyword in RESERVED_KEYWORDS:
-                if keyword == clean_lower or clean_lower.startswith(keyword + " ") or clean_lower.endswith(" " + keyword):
-                    return False
-                    
-            # Skip if it's mostly/all digits (like Transaction No)
-            digits_only = clean.replace(" ", "").replace("-", "").replace(".", "")
-            if digits_only.isdigit():
-                return False
-                
-            # Skip if it looks like a phone number or account number
-            if re.match(r"^[\d\+\-\s\(\)]{8,}$", clean):
-                return False
-                
-            # Should contain at least some letters
-            if not any(c.isalpha() for c in clean):
-                return False
-                
-            return True
-        
-        def extract_name_after_anchor(line: str, anchor_pattern: str, lines: list, line_idx: int) -> str:
-            """
-            Extract name that appears AFTER an anchor label.
-            Checks: (1) Same line after colon, (2) Next 1-2 lines.
-            """
-            # Try regex match on current line
-            match = re.search(anchor_pattern + r"(.+)$", line, re.IGNORECASE)
-            if match:
-                candidate = match.group(1).strip()
-                # Clean up any trailing punctuation
-                candidate = re.sub(r"[:\-,;]+$", "", candidate).strip()
-                if is_valid_name(candidate):
-                    return candidate
-            
-            # Check if line contains ONLY the anchor (name on next line)
-            anchor_only = re.match(anchor_pattern + r"$", line.strip(), re.IGNORECASE)
-            if anchor_only or re.search(anchor_pattern.rstrip(r"\s*"), line, re.IGNORECASE):
-                # Look at next 1-2 lines for a valid name
-                for offset in [1, 2]:
-                    if line_idx + offset < len(lines):
-                        next_line = lines[line_idx + offset].strip()
-                        # Skip if next line starts with another label
-                        if any(re.match(p, next_line, re.IGNORECASE) for p in SENDER_ANCHORS + RECIPIENT_ANCHORS):
-                            break
-                        if is_valid_name(next_line):
-                            return next_line
-            
-            return None
-        
-        # Execute anchor-based extraction
-        sender_name = None
-        beneficiary_name = None
-        
-        for i, line in enumerate(lines):
-            line_clean = line.strip()
-            if not line_clean:
-                continue
-                
-            # Check for SENDER anchors
-            if not sender_name:
-                for anchor in SENDER_ANCHORS:
-                    result = extract_name_after_anchor(line_clean, anchor, lines, i)
-                    if result:
-                        sender_name = result
-                        logger.info(f"ANCHOR PARSE: Found Sender '{sender_name}' via anchor '{anchor}'")
-                        break
-            
-            # Check for RECIPIENT anchors
-            if not beneficiary_name:
-                for anchor in RECIPIENT_ANCHORS:
-                    result = extract_name_after_anchor(line_clean, anchor, lines, i)
-                    if result:
-                        beneficiary_name = result
-                        logger.info(f"ANCHOR PARSE: Found Beneficiary '{beneficiary_name}' via anchor '{anchor}'")
-                        break
-        
-        # Override parsed_data with anchor-extracted values (if found)
-        if sender_name:
-            logger.info(f"ANCHOR OVERRIDE: Setting sender_name = '{sender_name}'")
-            parsed_data["sender_name"] = sender_name
-        else:
-            logger.warning("ANCHOR PARSE: No sender name found via anchors - leaving as-is")
-            
-        if beneficiary_name:
-            logger.info(f"ANCHOR OVERRIDE: Setting beneficiary_name = '{beneficiary_name}'")
-            parsed_data["beneficiary_name"] = beneficiary_name
-        else:
-            logger.warning("ANCHOR PARSE: No beneficiary name found via anchors - leaving as-is")
+    # NOTE: _apply_strict_opay_rules() was DELETED.
+    # It was the root cause of the name swap bug — regex anchors forcibly
+    # overrode correct AI output on OPay/PalmPay receipts.
+    # The Groq Vision extractor (groq_vision_extractor.py) now handles
+    # receipt parsing directly from images without text intermediary.
     
     def extract_from_text(self, text: str) -> Dict[str, Any]:
         """
