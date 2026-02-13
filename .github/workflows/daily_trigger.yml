@@ -12,5 +12,5 @@ jobs:
     steps:
       - name: Trigger SmartBursar Reminder Endpoint
         run: |
-          # 120s timeout allows Render to wake up from cold start
-          curl -X GET https://smartbursar-bot.onrender.com/trigger-template-reminders --max-time 120
+          # 300s timeout allows Render to wake up from cold start
+          curl -X GET https://smartbursar-bot.onrender.com/trigger-template-reminders --max-time 300
