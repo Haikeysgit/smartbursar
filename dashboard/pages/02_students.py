@@ -209,12 +209,13 @@ with tab1:
                 "Class": st.column_config.SelectboxColumn("Class", options=class_options, required=True),
                 "Parent": st.column_config.TextColumn("Parent", required=True),
                 "Phone": st.column_config.TextColumn("Phone", required=True),
-                "Fees": st.column_config.NumberColumn("Fees", min_value=0), # Removed format to prevent JS error
-                "Paid": st.column_config.NumberColumn("Paid", min_value=0), # Now editable, removed format
+                # Fees & Paid: Letting Streamlit infer NumberColumn by default to avoid JS errors
+                # "Fees": st.column_config.NumberColumn("Fees", min_value=0), 
+                # "Paid": st.column_config.NumberColumn("Paid", min_value=0),
                 "Balance": st.column_config.NumberColumn("Balance", format="N%d", disabled=True),
                 "Status": st.column_config.TextColumn("Status", disabled=True),
             },
-            key="student_editor_v2", # Changed key to force re-render
+            key="student_editor_v3", # v3 to force re-render
         )
         
         # Detect and save changes
