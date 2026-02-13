@@ -447,27 +447,26 @@ def trigger_daily_tasks(db: Session = Depends(get_db)):
 @app.get("/trigger-template-reminders")
 def trigger_template_reminders(db: Session = Depends(get_db)):
     """
-    NEW: Trigger 3-tier due-date based template reminders.
+    Triggers the Weekly Reminder Cycle (Phase 1: Mon, Phase 2: Mon+Thu).
     
-    Schedule: Daily at 8:00 AM WAT (use Render Cron Job with this URL)
-    
-    Triggers:
-        - 3 days before due_date -> fee_alert_soft
-        - On due_date -> fee_alert_v1
-        - 7 days after due_date -> fee_alert_urgent
+    Note: URL kept as 'trigger-template-reminders' to avoid changing GitHub Workflow,
+    but it now runs the 'User Research Based' weekly logic.
     """
     try:
-        from services.scheduler.reminder_engine import run_template_reminder_cycle
+        from services.scheduler.reminder_engine import run_reminder_cycle
         
-        stats = run_template_reminder_cycle(db)
+        # User requested "Every Monday". The GitHub workflow handles the "Monday" part.
+        # We pass force=True to bypass internal time-window checks if any, 
+        # relying on the external CRON trigger.
+        stats = run_reminder_cycle(db, force=True)
         
         return {
             "success": True,
-            "message": "Template reminder cycle completed",
+            "message": "Weekly reminder cycle completed",
             "stats": stats
         }
     except Exception as e:
-        logger.error(f"Template reminder execution failed: {e}")
+        logger.error(f"Reminder execution failed: {e}")
         return {"success": False, "error": str(e)}
 
 # =============================================================================
