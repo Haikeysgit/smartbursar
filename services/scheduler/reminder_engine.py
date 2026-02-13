@@ -389,16 +389,29 @@ def run_reminder_cycle(db: Session, force: bool = False) -> dict:
                 stats["skipped_rate_limit"] += 1
                 break
             
-            # Build Template Vars
-            # {{1}}=Amount, {{2}}=Student, {{3}}=School, {{4}}=Bank, {{5}}=AcctNum, {{6}}=AcctName
-            template_vars = [
-                format_naira(student.balance),
-                student.full_name,
-                school.school_name,
-                school.bank_name,
-                school.account_number,
-                school.account_name,
-            ]
+            # Build Template Vars based on Template Type
+            # fee_alert_v1 / urgent: {{1}}=Amount, {{2}}=Student, {{3}}=School
+            # fee_alert_soft: {{1}}=School, {{2}}=Amount, {{3}}=Student
+            
+            if template_name == "fee_alert_soft":
+                template_vars = [
+                    school.school_name,             # {{1}} "from [School]"
+                    format_naira(student.balance),  # {{2}} "balance of [Amount]"
+                    student.full_name,              # {{3}} "for [Student]"
+                    school.bank_name,
+                    school.account_number,
+                    school.account_name,
+                ]
+            else:
+                # Standard & Urgent order
+                template_vars = [
+                    format_naira(student.balance),  # {{1}} "fees of [Amount]"
+                    student.full_name,              # {{2}} "for [Student]"
+                    school.school_name,             # {{3}} "at [School]"
+                    school.bank_name,
+                    school.account_number,
+                    school.account_name,
+                ]
             
             try:
                 log, error = sender.send_whatsapp(
