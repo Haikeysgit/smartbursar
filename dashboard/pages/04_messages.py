@@ -84,44 +84,6 @@ st.markdown("---")
 
 
 # =============================================================================
-# Statistics
-# =============================================================================
-
-st.subheader("Delivery Statistics (Last 30 Days)")
-
-with get_db_context() as db:
-    cutoff = datetime.now() - timedelta(days=30)
-    messages = db.query(MessageLog).filter(
-        MessageLog.school_id == school_id,
-        MessageLog.sent_at >= cutoff,
-    ).all()
-    
-    total = len(messages)
-    delivered = sum(1 for m in messages if m.status == MessageStatus.DELIVERED)
-    read = sum(1 for m in messages if m.status == MessageStatus.READ)
-    failed = sum(1 for m in messages if m.status == MessageStatus.FAILED)
-    cost = sum(float(m.cost) for m in messages)
-
-col_count = 5 if st.session_state.get("role") == "SUPER_ADMIN" else 4
-cols = st.columns(col_count)
-
-with cols[0]:
-    st.metric("Total Sent", f"{total}")
-with cols[1]:
-    st.metric("Delivered", f"{delivered}")
-with cols[2]:
-    st.metric("Read", f"{read}")
-with cols[3]:
-    st.metric("Failed", f"{failed}")
-
-if st.session_state.get("role") == "SUPER_ADMIN":
-    with cols[4]:
-        st.metric("Total Cost", f"N{cost:,.2f}")
-
-st.markdown("---")
-
-
-# =============================================================================
 # Message History
 # =============================================================================
 
@@ -177,8 +139,6 @@ st.markdown("---")
 # =============================================================================
 
 st.subheader("Send Test Message")
-
-st.info("Schedule: 7:00 AM WAT | Phase 1 (before mid-term): Mondays | Phase 2 (after mid-term): Mon + Thu | 14-day grace after term start")
 
 with get_db_context() as db:
     students = db.query(Student).filter(
