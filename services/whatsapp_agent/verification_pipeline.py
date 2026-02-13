@@ -273,37 +273,100 @@ class VerificationPipeline:
                 logger.warning(f"⚠️ POTENTIAL NAME SWAP: Sender '{raw_sender}' matches school identifiers. Forwarding to Admin for Manual Confirmation.")
                 # Continue processing - admin will review and decide
             
-            extracted_beneficiary = str(raw_beneficiary).lower()
-            extracted_sender = str(raw_sender).lower()
-            
             # ============================================================
-            # MANUAL MODE: AUTO-VERIFICATION DISABLED
+            # SMART AUTO-VERIFICATION (Phase 2)
             # ============================================================
-            # Due to OCR reliability issues, ALL receipts are sent for
-            # manual admin review. No automatic approvals.
+            # Clean receipts are auto-approved. Sketchy ones go to admin.
             # ============================================================
             
             extracted_amount = Decimal(str(extraction.get("amount", 0)))
+            extracted_ref = extraction.get("reference") or None
+            extracted_date_str = extraction.get("date") or None
             
-            # FORCE PENDING - Never auto-approve
+            # ---- Confidence Checks ----
+            flags = []  # Reasons to escalate to admin
+            
+            # Check 1: Beneficiary matches school name or account name
+            beneficiary_has_school = has_school_identifier(raw_beneficiary)
+            if not beneficiary_has_school:
+                flags.append(f"⚠️ Beneficiary '{raw_beneficiary}' does not match school name")
+                logger.warning(f"CONFIDENCE: Beneficiary mismatch — '{raw_beneficiary}' vs school identifiers")
+            
+            # Check 2: Sender name matches school (possible swap — always flag)
+            if sender_has_school:
+                flags.append(f"🔄 Sender '{raw_sender}' matches school name — possible swap")
+            
+            # Check 3: Date recency (within 7 days)
+            if extracted_date_str:
+                try:
+                    from dateutil import parser as date_parser
+                    receipt_date = date_parser.parse(extracted_date_str, dayfirst=True)
+                    days_old = (datetime.now() - receipt_date).days
+                    if days_old > 7:
+                        flags.append(f"📅 Receipt is {days_old} days old (limit: 7 days)")
+                        logger.warning(f"CONFIDENCE: Receipt date too old — {days_old} days")
+                    elif days_old < 0:
+                        flags.append(f"📅 Receipt date is in the future")
+                except Exception as date_err:
+                    logger.warning(f"CONFIDENCE: Could not parse date '{extracted_date_str}': {date_err}")
+                    # Don't flag — unparseable date is not necessarily sketchy
+            
+            # Check 4: Duplicate reference check
+            if extracted_ref:
+                existing_txn = db.query(Transaction).filter(
+                    Transaction.receipt_reference == extracted_ref
+                ).first()
+                
+                if existing_txn:
+                    # Check if it's the same parent or different
+                    existing_student = existing_txn.student
+                    if existing_student and existing_student.id == student.id:
+                        # Same student, duplicate receipt — REJECT immediately
+                        logger.warning(f"DUPLICATE: Reference '{extracted_ref}' already exists for student {student.full_name}")
+                        whatsapp_client.send_text(
+                            parent_phone,
+                            f"⚠️ Duplicate Receipt Detected\n\n"
+                            f"This receipt (Ref: {extracted_ref}) has already been submitted.\n"
+                            f"If you believe this is an error, please contact the school office."
+                        )
+                        return {"success": False, "error": "Duplicate receipt"}
+                    else:
+                        # Different student — suspicious reuse
+                        flags.append(f"🚨 Reference '{extracted_ref}' already used by another parent — Suspicious Reuse")
+                        logger.warning(f"SUSPICIOUS: Reference '{extracted_ref}' reused by different parent")
+            
+            # Check 5: Amount sanity
+            if extracted_amount <= 0:
+                flags.append("💰 Amount is zero or negative")
+            elif extracted_amount > Decimal("1000000"):
+                flags.append(f"💰 Amount ₦{extracted_amount:,.2f} exceeds auto-approve limit (₦1,000,000)")
+            
+            # ---- DECISION: Auto-approve or escalate ----
+            auto_approved = len(flags) == 0
+            # Always create as PENDING — process_successful_payment handles VERIFIED transition
             status = TransactionStatus.PENDING
-            auto_approved = False
             
-            # Build verification note with extracted data for admin review
-            verification_note = (
-                f"📋 MANUAL REVIEW REQUIRED\n"
-                f"Sender: {raw_sender or 'Unknown'}\n"
-                f"Recipient: {raw_beneficiary or 'Unknown'}"
-            )
+            logger.info(f"CONFIDENCE: {'AUTO-APPROVE ✅' if auto_approved else f'ESCALATE ❌ ({len(flags)} flags)'}")
+            for flag in flags:
+                logger.info(f"  FLAG: {flag}")
             
-            logger.info(f"📋 MANUAL MODE: Receipt sent for admin review. Amount: {extracted_amount}, Sender: {raw_sender}, Recipient: {raw_beneficiary}")
+            # Build verification note
+            if auto_approved:
+                verification_note = (
+                    f"✅ AUTO-VERIFIED\n"
+                    f"Sender: {raw_sender or 'Unknown'}\n"
+                    f"Recipient: {raw_beneficiary or 'Unknown'}"
+                )
+            else:
+                verification_note = (
+                    f"📋 MANUAL REVIEW REQUIRED\n"
+                    f"Sender: {raw_sender or 'Unknown'}\n"
+                    f"Recipient: {raw_beneficiary or 'Unknown'}\n"
+                    f"Flags: {'; '.join(flags)}"
+                )
 
-            # Create Transaction (balance NOT updated - pending manual approval)
+            # Create Transaction
             balance_before = student.fees_total_due - student.amount_paid
-            
-            # DO NOT update balance - transaction is PENDING
-            
-            balance_after = student.fees_total_due - student.amount_paid # Recalculate
             
             # Generate Receipt Number
             payment_count = db.query(Transaction).filter(Transaction.student_id == student.id).count() + 1
@@ -319,62 +382,66 @@ class VerificationPipeline:
                 notes=json.dumps(extraction),
                 proof_description=verification_note,
                 receipt_hash=file_hash,
+                receipt_reference=extracted_ref,
                 balance_before=balance_before,
-                balance_after=balance_after
+                balance_after=balance_before,  # Updated below if auto-approved
             )
-            
-            if auto_approved:
-                transaction.verified_at = datetime.now()
-                # Bot acts as verifier? Or System? Leave verified_by_id null.
             
             db.add(transaction)
             db.commit()
             
-            # Step 4: Feedback
+            # Step 4: Feedback based on decision
             if auto_approved:
-                # SEND TEXT ONLY - PDF DISABLED (Too many timeouts/errors)
-                whatsapp_client.send_text(
-                    parent_phone,
-                    f"✅ **Payment Verified!**\n\n"
-                    f"Amount: ₦{extracted_amount:,.2f}\n"
-                    f"Student: {student.full_name}\n"
-                    f"Receipt: {receipt_num}\n"
-                    f"New Balance: ₦{transaction.balance_after:,.2f}\n\n"
-                    f"Thank you! 🙏"
+                # ---- AUTO-APPROVED: Update balance, notify parent, quiet admin log ----
+                from services.payments.payment_recorder import process_successful_payment
+                
+                process_successful_payment(
+                    db,
+                    transaction.id,
+                    verified_by_id=None,  # System auto-verified
+                    send_pdf=True
                 )
-                logger.info(f"Payment verified for {student.full_name}. Receipt: {receipt_num}")
+                
+                logger.info(f"✅ AUTO-VERIFIED: {student.full_name}, ₦{extracted_amount:,.2f}, Ref: {extracted_ref}")
+                
+                # Quiet admin notification (no action needed)
+                admin_phone = self._get_admin_phone(school)
+                if admin_phone:
+                    whatsapp_client.send_text(
+                        admin_phone,
+                        f"✅ Auto-Verified Payment\n"
+                        f"Student: {student.full_name}\n"
+                        f"Amount: ₦{extracted_amount:,.2f}\n"
+                        f"Sender: {raw_sender or 'Unknown'}\n"
+                        f"Bank: {extraction.get('bank_name', 'Unknown')}\n"
+                        f"Ref: {extracted_ref or 'N/A'}"
+                    )
 
             else:
-                # Layer 3 Feedback (Manual Review Needed)
+                # ---- ESCALATE: Send to admin for manual review ----
                 whatsapp_client.send_text(
                     parent_phone,
                     f"📄 **Receipt Received**\n"
                     f"Amount: ₦{extracted_amount:,.2f}\n\n"
-                    f"There was a slight mismatch in the details, so I've sent this to the Bursar for manual confirmation.\n"
+                    f"I've sent this to the Bursar for confirmation.\n"
                     f"You'll receive your receipt once approved!"
                 )
                 
-                # Notify Admin
+                # Notify Admin with specific flags
                 admin_phone = self._get_admin_phone(school)
                 if admin_phone:
-                    # Determine Alert Header
-                    header = "👮‍♂️ **Admin Action Needed**"
-                    warning = ""
+                    flag_text = "\n".join(flags)
                     
-                    if "Flagged" in verification_note:
-                        header = "⚠️ **Flagged Receipt**"
-                        warning = f"\nreason: {verification_note}\n"
-                    
-                    # Clearer Admin Message
                     whatsapp_client.send_text(
                         admin_phone,
-                        f"{header}\n"
+                        f"⚠️ **Admin Review Needed**\n"
                         f"Payment Verification Request\n\n"
                         f"Student: {student.full_name}\n"
                         f"Amount: ₦{extracted_amount:,.2f}\n"
                         f"Bank: {extraction.get('bank_name', 'Unknown')}\n"
                         f"Sender: {extraction.get('sender_name', 'Unknown')}\n"
-                        f"{warning}\n"
+                        f"Ref: {extracted_ref or 'N/A'}\n\n"
+                        f"🔍 Flags:\n{flag_text}\n\n"
                         f"Reply 'Confirmed' to approve or 'Fake' to reject."
                     )
                     
@@ -383,7 +450,7 @@ class VerificationPipeline:
                         admin_phone,
                         file_path,
                         filename="receipt_proof.jpg",
-                        caption=f"📎 Proof of Payment ({verification_note})"
+                        caption=f"📎 Proof of Payment"
                     )
                     
                     # Add to Pending List
@@ -721,8 +788,7 @@ class VerificationPipeline:
                 whatsapp_client.send_text(
                     student.parent_phone_primary,
                     f"❌ Payment Verification Failed\n\n"
-                    f"The receipt for ₦{pending_txn.amount:,.2f} was rejected by the school admin.\n"
-                    f"Reason: Invalid or blurry receipt.\n\n"
+                    f"The receipt for ₦{pending_txn.amount:,.2f} was rejected.\n\n"
                     f"Please contact the school office if this is a mistake."
                 )
                 

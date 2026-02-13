@@ -161,13 +161,28 @@ class GroqVisionExtractor:
                 logger.error(f"Image file not found: {file_path}")
                 return None, None
             
-            # Check if it's a PDF (vision can't handle PDFs, would need OCR fallback)
+            # Handle PDF files — convert first page to image
             if path.suffix.lower() == ".pdf":
-                logger.warning(f"PDF file detected — vision model cannot process PDFs")
-                return None, None
-            
-            # Open and resize
-            img = Image.open(file_path)
+                logger.info("PDF detected — converting first page to image")
+                try:
+                    import fitz  # PyMuPDF
+                    doc = fitz.open(file_path)
+                    if len(doc) == 0:
+                        logger.error("PDF has no pages")
+                        return None, None
+                    page = doc[0]  # First page only
+                    # Render at 300 DPI for clear text
+                    mat = fitz.Matrix(300/72, 300/72)
+                    pix = page.get_pixmap(matrix=mat)
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    doc.close()
+                    logger.info(f"PDF page rendered: {pix.width}x{pix.height}")
+                except Exception as pdf_err:
+                    logger.error(f"PDF conversion failed: {pdf_err}")
+                    return None, None
+            else:
+                # Open regular image
+                img = Image.open(file_path)
             
             # Convert RGBA/P to RGB (JPEG doesn't support transparency)
             if img.mode in ("RGBA", "P", "LA"):

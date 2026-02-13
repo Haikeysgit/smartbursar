@@ -147,6 +147,26 @@ def init_db():
             logger.info("Tables created successfully.")
         else:
             logger.info("Tables already exist. Skipping creation.")
+        
+        # ---- Safe Migrations (idempotent) ----
+        # Add new columns to existing tables without breaking anything
+        if inspector.has_table("transactions"):
+            existing_cols = [col["name"] for col in inspector.get_columns("transactions")]
+            
+            if "receipt_reference" not in existing_cols:
+                logger.info("MIGRATION: Adding 'receipt_reference' column to transactions table...")
+                with engine.begin() as conn:
+                    conn.execute(
+                        __import__('sqlalchemy').text(
+                            "ALTER TABLE transactions ADD COLUMN receipt_reference VARCHAR(100)"
+                        )
+                    )
+                    conn.execute(
+                        __import__('sqlalchemy').text(
+                            "CREATE INDEX IF NOT EXISTS ix_transactions_receipt_reference ON transactions (receipt_reference)"
+                        )
+                    )
+                logger.info("MIGRATION: 'receipt_reference' column added successfully.")
             
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")

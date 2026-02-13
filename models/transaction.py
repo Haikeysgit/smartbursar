@@ -127,6 +127,12 @@ class Transaction(Base, TimestampMixin):
         index=True,
         comment="SHA-256 hash of receipt file for duplicate detection"
     )
+    receipt_reference: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+        comment="Transaction reference/ID from receipt (for duplicate detection)"
+    )
     
     # -------------------------------------------------------------------------
     # Snapshot of balance at time of payment (for receipts)

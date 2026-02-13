@@ -13,6 +13,7 @@ httpx>=0.27.0             # HTTP client for Groq and OCR.space APIs
 pydantic>=2.0.0           # Data validation
 pydantic-settings>=2.0.0  # Settings management
 slowapi>=0.1.9            # Rate limiting for FastAPI
+python-dateutil>=2.8.0    # Date parsing for receipt verification
 
 # -----------------------------------------------------------------------------
 # Database
@@ -39,6 +40,7 @@ pytz>=2024.1              # Timezone handling (WAT)
 # -----------------------------------------------------------------------------
 reportlab>=4.0.0          # Receipt PDF creation
 Pillow>=10.0.0            # Image handling for logos
+PyMuPDF>=1.23.0           # PDF-to-image for receipt parsing
 
 # -----------------------------------------------------------------------------
 # Dashboard
