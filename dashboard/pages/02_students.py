@@ -168,30 +168,97 @@ with tab1:
     
     st.markdown("---")
     
-    # Data Table
+    # Data Table — Editable like Excel
     if not student_data:
         st.info("No students found matching your filters.")
     else:
-        # Display table with formatted values
-        display = []
-        for s in student_data:
-            display.append({
+        # Build editable dataframe with raw values (not formatted strings)
+        edit_data = []
+        id_map = {}  # row index -> student id
+        for idx, s in enumerate(student_data):
+            id_map[idx] = s["id"]
+            edit_data.append({
                 "Name": s["full_name"],
                 "Class": s["class_level"],
                 "Parent": s["parent_name"],
-                "Phone": s["parent_phone"],
-                "Fees": f"N{int(s['fees_due']):,}",
-                "Paid": f"N{int(s['paid']):,}",
-                "Balance": f"N{int(s['balance']):,}",
+                "Phone": s["parent_phone"] or "",
+                "Fees": int(s["fees_due"]),
+                "Paid": int(s["paid"]),
+                "Balance": int(s["balance"]),
                 "Status": s["status"],
             })
         
-        df = pd.DataFrame(display)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        original_df = pd.DataFrame(edit_data)
+        
+        # Class options for dropdown
+        class_options = [
+            "Nursery 1", "Nursery 2", "Nursery 3",
+            "Primary 1", "Primary 2", "Primary 3", "Primary 4", "Primary 5", "Primary 6",
+            "JSS 1", "JSS 2", "JSS 3",
+            "SS 1", "SS 2", "SS 3",
+        ]
+        
+        # Editable table — click any cell to edit
+        edited_df = st.data_editor(
+            original_df,
+            use_container_width=True,
+            hide_index=True,
+            num_rows="fixed",  # No adding/deleting rows from here
+            column_config={
+                "Name": st.column_config.TextColumn("Name", required=True),
+                "Class": st.column_config.SelectboxColumn("Class", options=class_options, required=True),
+                "Parent": st.column_config.TextColumn("Parent", required=True),
+                "Phone": st.column_config.TextColumn("Phone", required=True),
+                "Fees": st.column_config.NumberColumn("Fees", min_value=0, format="N%d"),
+                "Paid": st.column_config.NumberColumn("Paid", format="N%d", disabled=True),
+                "Balance": st.column_config.NumberColumn("Balance", format="N%d", disabled=True),
+                "Status": st.column_config.TextColumn("Status", disabled=True),
+            },
+            key="student_editor",
+        )
+        
+        # Detect and save changes
+        changes_detected = not original_df.equals(edited_df)
+        
+        if changes_detected:
+            if st.button("Save All Changes", type="primary", use_container_width=True):
+                saved_count = 0
+                try:
+                    with get_db_context() as db:
+                        for idx in range(len(edited_df)):
+                            orig_row = original_df.iloc[idx]
+                            edit_row = edited_df.iloc[idx]
+                            
+                            # Check if this row changed
+                            row_changed = False
+                            for col in ["Name", "Class", "Parent", "Phone", "Fees"]:
+                                if str(orig_row[col]) != str(edit_row[col]):
+                                    row_changed = True
+                                    break
+                            
+                            if not row_changed:
+                                continue
+                            
+                            student_id = id_map[idx]
+                            student_obj = db.query(Student).filter(Student.id == student_id).first()
+                            if student_obj:
+                                student_obj.full_name = str(edit_row["Name"])
+                                student_obj.class_level = str(edit_row["Class"])
+                                student_obj.parent_name = str(edit_row["Parent"])
+                                student_obj.parent_phone_primary = str(edit_row["Phone"])
+                                student_obj.fees_total_due = Decimal(str(int(edit_row["Fees"])))
+                                saved_count += 1
+                        
+                        db.commit()
+                    
+                    st.success(f"Saved changes to {saved_count} student(s)!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error saving changes: {e}")
         
         st.markdown("---")
         
-        # Export with import-compatible format (raw values, includes Due Date)
+        # Export CSV
         export_data = []
         for s in student_data:
             export_data.append({
@@ -213,20 +280,17 @@ with tab1:
             mime="text/csv",
         )
         
-        # Student Management Section
+        # Archive / Delete Section
         st.markdown("---")
-        st.subheader("Student Management")
+        st.subheader("Student Actions")
         
         manage_opts = {f"{s['full_name']} ({s['class_level']})": s['id'] for s in student_data}
         if manage_opts:
             manage_sel = st.selectbox("Select Student", options=list(manage_opts.keys()), key="manage_student_sel")
             student_id_to_manage = manage_opts[manage_sel]
-            
-            # Find the selected student's current data
             selected_student_data = next(s for s in student_data if s["id"] == student_id_to_manage)
             
-            # ---- Action Buttons Row ----
-            col_edit, col_archive, col_delete = st.columns(3)
+            col_archive, col_delete = st.columns(2)
             
             with col_archive:
                 if show_archived:
@@ -247,122 +311,28 @@ with tab1:
                                 {"sid": student_id_to_manage}
                             )
                             db.commit()
-                        st.success("Student archived! They won't receive reminders.")
+                        st.success("Archived! They won't receive reminders.")
                         st.rerun()
             
-            # ---- EDIT STUDENT ----
-            with st.expander("Edit Student Details", expanded=False):
-                with st.form(f"edit_student_{student_id_to_manage}"):
-                    edit_col1, edit_col2 = st.columns(2)
-                    
-                    with edit_col1:
-                        edit_name = st.text_input("Student Name", value=selected_student_data["full_name"])
-                        edit_parent = st.text_input("Parent Name", value=selected_student_data["parent_name"])
-                        edit_phone = st.text_input("Phone", value=selected_student_data["parent_phone"] or "")
-                    
-                    with edit_col2:
-                        classes = [
-                            "Nursery 1", "Nursery 2", "Nursery 3",
-                            "Primary 1", "Primary 2", "Primary 3", "Primary 4", "Primary 5", "Primary 6",
-                            "JSS 1", "JSS 2", "JSS 3",
-                            "SS 1", "SS 2", "SS 3",
-                        ]
-                        current_class_idx = classes.index(selected_student_data["class_level"]) if selected_student_data["class_level"] in classes else 0
-                        edit_class = st.selectbox("Class", classes, index=current_class_idx, key="edit_class_sel")
-                        
-                        edit_fees = st.number_input(
-                            "School Fees (₦)", 
-                            min_value=0, 
-                            value=int(selected_student_data["fees_due"]),
-                            help="Balance will auto-recalculate: Balance = Fees − Amount Paid"
-                        )
-                        
-                        # Show preview of new balance
-                        new_balance = edit_fees - selected_student_data["paid"]
-                        if new_balance > 0:
-                            st.caption(f"New Balance: **N{int(new_balance):,}** (Owing)")
-                        elif new_balance == 0:
-                            st.caption(f"New Balance: **N0** (Fully Paid)")
-                        else:
-                            st.caption(f"New Balance: **N{int(new_balance):,}** (Overpaid)")
-                    
-                    save_edit = st.form_submit_button("Save Changes", type="primary", use_container_width=True)
-                    
-                    if save_edit:
-                        if not edit_name or not edit_parent or not edit_phone:
-                            st.error("Name, Parent, and Phone are required.")
-                        else:
-                            try:
-                                with get_db_context() as db:
-                                    student_obj = db.query(Student).filter(Student.id == student_id_to_manage).first()
-                                    if student_obj:
-                                        # Track changes for audit
-                                        changes = []
-                                        if student_obj.full_name != edit_name:
-                                            changes.append(f"Name: '{student_obj.full_name}' → '{edit_name}'")
-                                            student_obj.full_name = edit_name
-                                        if student_obj.class_level != edit_class:
-                                            changes.append(f"Class: '{student_obj.class_level}' → '{edit_class}'")
-                                            student_obj.class_level = edit_class
-                                        if student_obj.parent_name != edit_parent:
-                                            changes.append(f"Parent: '{student_obj.parent_name}' → '{edit_parent}'")
-                                            student_obj.parent_name = edit_parent
-                                        if student_obj.parent_phone_primary != edit_phone:
-                                            changes.append(f"Phone: '{student_obj.parent_phone_primary}' → '{edit_phone}'")
-                                            student_obj.parent_phone_primary = edit_phone
-                                        if float(student_obj.fees_total_due) != float(edit_fees):
-                                            changes.append(f"Fees: N{int(student_obj.fees_total_due):,} → N{int(edit_fees):,}")
-                                            student_obj.fees_total_due = Decimal(str(edit_fees))
-                                        
-                                        if changes:
-                                            db.commit()
-                                            st.success(f"Updated {edit_name}!")
-                                            for c in changes:
-                                                st.caption(f"  • {c}")
-                                            st.rerun()
-                                        else:
-                                            st.info("No changes detected.")
-                            except Exception as e:
-                                st.error(f"Error updating student: {e}")
-            
-            # ---- DELETE STUDENT ----
-            with st.expander("Delete Student", expanded=False):
-                st.warning(
-                    f"This will **permanently delete** {selected_student_data['full_name']} "
-                    f"and all their payment records. This cannot be undone."
-                )
-                
-                confirm_name = st.text_input(
-                    f"Type the student's name to confirm deletion:",
-                    placeholder=selected_student_data["full_name"],
-                    key="delete_confirm_input"
-                )
-                
-                if st.button("Delete Permanently", type="primary", use_container_width=True):
-                    if confirm_name.strip().lower() == selected_student_data["full_name"].strip().lower():
+            with col_delete:
+                confirm_delete = st.checkbox(f"I want to delete {selected_student_data['full_name']}", key="confirm_del")
+                if confirm_delete:
+                    if st.button("Delete Permanently", type="primary", use_container_width=True):
                         try:
                             with get_db_context() as db:
-                                # Delete transactions first (foreign key)
                                 from models.transaction import Transaction
                                 db.query(Transaction).filter(
                                     Transaction.student_id == student_id_to_manage
                                 ).delete()
-                                
-                                # Delete student
                                 db.query(Student).filter(
                                     Student.id == student_id_to_manage
                                 ).delete()
-                                
                                 db.commit()
-                            
-                            st.success(f"Deleted {selected_student_data['full_name']} and all payment records.")
+                            st.success(f"Deleted {selected_student_data['full_name']}.")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error deleting student: {e}")
-                    else:
-                        st.error("Name doesn't match. Please type the exact student name to confirm.")
-        else:
-            st.info("No students available to manage.")
+                            st.error(f"Error: {e}")
+
 
 
 # =============================================================================
