@@ -230,7 +230,7 @@ with tab1:
             
             with col_archive:
                 if show_archived:
-                    if st.button("📦 Unarchive", use_container_width=True):
+                    if st.button("Unarchive", use_container_width=True):
                         with get_db_context() as db:
                             db.execute(
                                 text("UPDATE students SET is_archived = FALSE WHERE id = :sid"),
@@ -240,7 +240,7 @@ with tab1:
                         st.success("Student unarchived!")
                         st.rerun()
                 else:
-                    if st.button("📦 Archive", use_container_width=True):
+                    if st.button("Archive", use_container_width=True):
                         with get_db_context() as db:
                             db.execute(
                                 text("UPDATE students SET is_archived = TRUE WHERE id = :sid"),
@@ -251,7 +251,7 @@ with tab1:
                         st.rerun()
             
             # ---- EDIT STUDENT ----
-            with st.expander("✏️ Edit Student Details", expanded=False):
+            with st.expander("Edit Student Details", expanded=False):
                 with st.form(f"edit_student_{student_id_to_manage}"):
                     edit_col1, edit_col2 = st.columns(2)
                     
@@ -280,13 +280,13 @@ with tab1:
                         # Show preview of new balance
                         new_balance = edit_fees - selected_student_data["paid"]
                         if new_balance > 0:
-                            st.caption(f"📊 New Balance: **N{int(new_balance):,}** (Owing)")
+                            st.caption(f"New Balance: **N{int(new_balance):,}** (Owing)")
                         elif new_balance == 0:
-                            st.caption(f"📊 New Balance: **N0** (Fully Paid ✅)")
+                            st.caption(f"New Balance: **N0** (Fully Paid)")
                         else:
-                            st.caption(f"📊 New Balance: **N{int(new_balance):,}** (Overpaid)")
+                            st.caption(f"New Balance: **N{int(new_balance):,}** (Overpaid)")
                     
-                    save_edit = st.form_submit_button("💾 Save Changes", type="primary", use_container_width=True)
+                    save_edit = st.form_submit_button("Save Changes", type="primary", use_container_width=True)
                     
                     if save_edit:
                         if not edit_name or not edit_parent or not edit_phone:
@@ -316,7 +316,7 @@ with tab1:
                                         
                                         if changes:
                                             db.commit()
-                                            st.success(f"✅ Updated {edit_name}!")
+                                            st.success(f"Updated {edit_name}!")
                                             for c in changes:
                                                 st.caption(f"  • {c}")
                                             st.rerun()
@@ -326,9 +326,9 @@ with tab1:
                                 st.error(f"Error updating student: {e}")
             
             # ---- DELETE STUDENT ----
-            with st.expander("🗑️ Delete Student", expanded=False):
+            with st.expander("Delete Student", expanded=False):
                 st.warning(
-                    f"⚠️ This will **permanently delete** {selected_student_data['full_name']} "
+                    f"This will **permanently delete** {selected_student_data['full_name']} "
                     f"and all their payment records. This cannot be undone."
                 )
                 
@@ -338,7 +338,7 @@ with tab1:
                     key="delete_confirm_input"
                 )
                 
-                if st.button("🗑️ Delete Permanently", type="primary", use_container_width=True):
+                if st.button("Delete Permanently", type="primary", use_container_width=True):
                     if confirm_name.strip().lower() == selected_student_data["full_name"].strip().lower():
                         try:
                             with get_db_context() as db:
