@@ -279,21 +279,48 @@ def _get_fallback_template(context: dict, tone: str, phase: str) -> str:
 # Core Scheduler
 # =============================================================================
 
-def run_reminder_cycle(db: Session, force: bool = False) -> dict:
+def _get_weekly_template_for_school(school: School) -> Tuple[Optional[str], str]:
     """
-    Run one cycle of the reminder scheduler.
+    Determine which template to use based on term progress.
     
-    Schedule (User Research Based):
-    - Grace: 14 days after term start (no messages)
-    - Phase 1: Mondays at 7 AM (polite)
-    - Phase 2: Mon + Thu at 7 AM (strict, exam warning)
-    
-    Args:
-        db: Database session
-        force: If True, bypass day-of-week and time checks
+    3-Stage Logic:
+    1. Weeks 0-2 (Grace): None
+    2. Weeks 3-6 (Early): fee_alert_soft (Polite)
+    3. Weeks 7-MidTerm (Mid): fee_alert_v1 (Standard)
+    4. After MidTerm (Late): fee_alert_urgent (Strict)
     
     Returns:
-        Summary dict with counts
+        (template_name, tone_label) or (None, "GRACE")
+    """
+    term_start = get_term_start_date(school)
+    if not term_start:
+        return ("fee_alert_v1", "DEFAULT")  # Fallback if no dates set
+        
+    today = get_today_wat()
+    days_since_start = (today - term_start).days
+    
+    if days_since_start < 14:
+        return (None, "GRACE")
+    
+    if days_since_start < 42:  # Weeks 3-6 (up to day 42)
+        return ("fee_alert_soft", "EARLY_TERM")
+        
+    # Check Mid-Term for Phase 2 transition
+    mid_term = get_mid_term_date(school)
+    if mid_term and today >= mid_term:
+        return ("fee_alert_urgent", "LATE_TERM")
+    
+    # Between Week 6 and Mid-Term
+    return ("fee_alert_v1", "MID_TERM")
+
+
+def run_reminder_cycle(db: Session, force: bool = False) -> dict:
+    """
+    Run the Weekly Reminder Cycle using 3-Stage Templates.
+    
+    Schedule:
+    - Mondays: Send appropriate template (Soft/Standard/Urgent)
+    - Thursdays: Send Urgent template ONLY if in Late Term (Phase 2)
     """
     stats = {
         "schools_processed": 0,
@@ -301,61 +328,54 @@ def run_reminder_cycle(db: Session, force: bool = False) -> dict:
         "reminders_sent": 0,
         "errors": 0,
         "skipped_rate_limit": 0,
-        "phase_1_schools": 0,
-        "phase_2_schools": 0,
-        "grace_period_schools": 0,
+        "skipped_grace_period": 0,
+        "template_soft": 0,
+        "template_standard": 0,
+        "template_urgent": 0,
     }
     
-    print(f"\n[SmartBursar] Reminder Cycle - {get_wat_now().strftime('%Y-%m-%d %H:%M')} WAT")
+    print(f"\n[SmartBursar] Weekly Cycle ({get_today_wat().strftime('%A')})")
     
-    # Get all active schools
-    active_schools = db.query(School).filter(
-        School.status == "ACTIVE"
-    ).all()
+    active_schools = db.query(School).filter(School.status == "ACTIVE").all()
+    today_weekday = get_today_wat().weekday()  # 0=Mon, 3=Thu
     
     for school in active_schools:
         if not school.is_active:
-            print(f"[SKIP] {school.school_name} - subscription expired")
             continue
+            
+        # 1. Determine Template & Phase
+        template_name, phase_label = _get_weekly_template_for_school(school)
         
-        # Check daily limit
-        if school.messages_sent_today >= settings.MAX_MESSAGES_PER_DAY_PER_SCHOOL:
-            print(f"[SKIP] {school.school_name} - daily limit reached")
-            stats["skipped_rate_limit"] += 1
+        if phase_label == "GRACE":
+            print(f"[SKIP] {school.school_name} - Grace Period")
+            stats["skipped_grace_period"] += 1
             continue
+            
+        # 2. Schedule Check (Monday vs Thursday)
+        # - Monday: Send ALWAYS (if not Grace)
+        # - Thursday: Send ONLY if Late Term (Urgent)
+        is_monday = (today_weekday == 0)
+        is_thursday = (today_weekday == 3)
         
+        should_run = False
+        if force:
+            should_run = True
+        elif is_monday:
+            should_run = True
+        elif is_thursday and phase_label == "LATE_TERM":
+            should_run = True
+            
+        if not should_run:
+            print(f"[SKIP] {school.school_name} - No schedule today ({phase_label})")
+            continue
+
         stats["schools_processed"] += 1
+        print(f"\n[SCHOOL] {school.school_name} | {phase_label} | {template_name}")
         
-        # Get current phase
-        phase = get_current_phase(school)
-        
-        if phase == "GRACE":
-            print(f"[SKIP] {school.school_name} - Grace Period (14 days)")
-            stats["grace_period_schools"] += 1
-            continue
-        
-        if phase == "EXAMS_STARTED" and not force:
-            print(f"[SKIP] {school.school_name} - Exams started (messaging paused)")
-            continue
-        
-        # Check if should send today (day of week)
-        if not should_send_today(school, force=force):
-            day_name = get_today_wat().strftime("%A")
-            print(f"[SKIP] {school.school_name} - {phase}, not a messaging day ({day_name})")
-            continue
-        
-        # Track phase stats
-        if phase == "PHASE_1":
-            stats["phase_1_schools"] += 1
-            print(f"\n[SCHOOL] {school.school_name} - PHASE 1 (Weekly/Polite)")
-        else:
-            stats["phase_2_schools"] += 1
-            print(f"\n[SCHOOL] {school.school_name} - PHASE 2 (Twice Weekly/Strict)")
-        
-        # Get students with OUTSTANDING BALANCE (critical: not status-based)
+        # 3. Get Debtors
         students = db.query(Student).filter(
             Student.school_id == school.id,
-            Student.fees_total_due > Student.amount_paid,  # balance_outstanding > 0
+            Student.fees_total_due > Student.amount_paid,
             Student.is_archived == False
         ).all()
         
@@ -364,28 +384,45 @@ def run_reminder_cycle(db: Session, force: bool = False) -> dict:
         for student in students:
             stats["students_checked"] += 1
             
-            # Check limit again
+            # Rate Limit
             if school.messages_sent_today >= settings.MAX_MESSAGES_PER_DAY_PER_SCHOOL:
                 stats["skipped_rate_limit"] += 1
                 break
             
-            # Generate and send message
-            message = generate_reminder_message(student, school, phase)
+            # Build Template Vars
+            # {{1}}=Amount, {{2}}=Student, {{3}}=School, {{4}}=Bank, {{5}}=AcctNum, {{6}}=AcctName
+            template_vars = [
+                format_naira(student.balance),
+                student.full_name,
+                school.school_name,
+                school.bank_name,
+                school.account_number,
+                school.account_name,
+            ]
             
             try:
                 log, error = sender.send_whatsapp(
                     to_phone=student.parent_phone_primary,
-                    message=message,
+                    message="",  # Template uses vars
                     student_id=student.id,
                     school_id=school.id,
+                    message_type=MessageType.REMINDER,
+                    is_template=True,
+                    template_name=template_name,
+                    template_vars=template_vars
                 )
                 
                 if error:
                     print(f"  [ERROR] {student.full_name}: {error}")
                     stats["errors"] += 1
                 else:
-                    print(f"  [SENT] {student.full_name} - {format_naira(student.balance)}")
+                    print(f"  [SENT] {student.full_name} -> {template_name}")
                     stats["reminders_sent"] += 1
+                    
+                    # Track breakdown
+                    if template_name == "fee_alert_soft": stats["template_soft"] += 1
+                    elif template_name == "fee_alert_v1": stats["template_standard"] += 1
+                    elif template_name == "fee_alert_urgent": stats["template_urgent"] += 1
                     
                     school.messages_sent_today += 1
                     school.monthly_spend += log.cost
@@ -394,11 +431,7 @@ def run_reminder_cycle(db: Session, force: bool = False) -> dict:
             except Exception as e:
                 print(f"  [ERROR] {student.full_name}: {str(e)}")
                 stats["errors"] += 1
-    
-    print(f"\n[SUMMARY] {stats['schools_processed']} schools, "
-          f"{stats['reminders_sent']} sent, "
-          f"Phase1: {stats['phase_1_schools']}, Phase2: {stats['phase_2_schools']}")
-    
+                
     return stats
 
 
