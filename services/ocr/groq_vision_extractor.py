@@ -169,14 +169,19 @@ class GroqVisionExtractor:
                     doc = fitz.open(file_path)
                     if len(doc) == 0:
                         logger.error("PDF has no pages")
+                        doc.close()
                         return None, None
                     page = doc[0]  # First page only
-                    # Render at 300 DPI for clear text
-                    mat = fitz.Matrix(300/72, 300/72)
+                    # Render at 150 DPI (not 300) — saves ~4x memory on Render's 512MB free tier
+                    # 150 DPI is plenty since we resize to 1024px anyway
+                    mat = fitz.Matrix(150/72, 150/72)
                     pix = page.get_pixmap(matrix=mat)
                     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                    doc.close()
                     logger.info(f"PDF page rendered: {pix.width}x{pix.height}")
+                    # Explicit cleanup to free memory immediately
+                    del pix
+                    doc.close()
+                    del doc
                 except Exception as pdf_err:
                     logger.error(f"PDF conversion failed: {pdf_err}")
                     return None, None
