@@ -209,12 +209,12 @@ with tab1:
                 "Class": st.column_config.SelectboxColumn("Class", options=class_options, required=True),
                 "Parent": st.column_config.TextColumn("Parent", required=True),
                 "Phone": st.column_config.TextColumn("Phone", required=True),
-                "Fees": st.column_config.NumberColumn("Fees", min_value=0, format="N%d"),
-                "Paid": st.column_config.NumberColumn("Paid", format="N%d", disabled=True),
+                "Fees": st.column_config.NumberColumn("Fees", min_value=0), # Removed format to prevent JS error
+                "Paid": st.column_config.NumberColumn("Paid", min_value=0), # Now editable, removed format
                 "Balance": st.column_config.NumberColumn("Balance", format="N%d", disabled=True),
                 "Status": st.column_config.TextColumn("Status", disabled=True),
             },
-            key="student_editor",
+            key="student_editor_v2", # Changed key to force re-render
         )
         
         # Detect and save changes
@@ -231,7 +231,7 @@ with tab1:
                             
                             # Check if this row changed
                             row_changed = False
-                            for col in ["Name", "Class", "Parent", "Phone", "Fees"]:
+                            for col in ["Name", "Class", "Parent", "Phone", "Fees", "Paid"]:
                                 if str(orig_row[col]) != str(edit_row[col]):
                                     row_changed = True
                                     break
@@ -247,6 +247,7 @@ with tab1:
                                 student_obj.parent_name = str(edit_row["Parent"])
                                 student_obj.parent_phone_primary = str(edit_row["Phone"])
                                 student_obj.fees_total_due = Decimal(str(int(edit_row["Fees"])))
+                                student_obj.amount_paid = Decimal(str(int(edit_row["Paid"]))) # Save Paid amount
                                 saved_count += 1
                         
                         db.commit()
