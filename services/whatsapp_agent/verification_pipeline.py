@@ -301,7 +301,8 @@ class VerificationPipeline:
                 try:
                     from dateutil import parser as date_parser
                     receipt_date = date_parser.parse(extracted_date_str, dayfirst=True)
-                    days_old = (datetime.now() - receipt_date).days
+                    from zoneinfo import ZoneInfo
+                    days_old = (datetime.now(ZoneInfo("Africa/Lagos")) - receipt_date.replace(tzinfo=ZoneInfo("Africa/Lagos"))).days
                     if days_old > 7:
                         flags.append(f"📅 Receipt is {days_old} days old (limit: 7 days)")
                         logger.warning(f"CONFIDENCE: Receipt date too old — {days_old} days")
@@ -436,12 +437,12 @@ class VerificationPipeline:
                         admin_phone,
                         f"⚠️ **Admin Review Needed**\n"
                         f"Payment Verification Request\n\n"
-                        f"Student: {student.full_name}\n"
+                        f"Student: {student.last_name} {student.first_name}\n"
                         f"Amount: ₦{extracted_amount:,.2f}\n"
                         f"Bank: {extraction.get('bank_name', 'Unknown')}\n"
                         f"Sender: {extraction.get('sender_name', 'Unknown')}\n"
                         f"Ref: {extracted_ref or 'N/A'}\n\n"
-                        f"🔍 Flags:\n{flag_text}\n\n"
+                        ""
                         f"Reply 'Confirmed' to approve or 'Fake' to reject."
                     )
                     

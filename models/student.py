@@ -254,6 +254,17 @@ class Student(Base, TimestampMixin):
     def days_until_due(self) -> int:
         """Days until due date (negative if overdue)."""
         return (self.due_date - date.today()).days
+
+    @property
+    def first_name(self) -> str:
+        """First name extracted from full_name."""
+        return self.full_name.split()[0] if self.full_name else ""
+
+    @property
+    def last_name(self) -> str:
+        """Last name extracted from full_name (rest of the name)."""
+        parts = self.full_name.split()
+        return " ".join(parts[1:]) if len(parts) > 1 else ""
     
     # -------------------------------------------------------------------------
     # Methods
