@@ -10,7 +10,19 @@ jobs:
   wake_up_and_sweep:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger SmartBursar Reminder Endpoint
+      - name: 1. Wake Up The Server (The Knock)
         run: |
-          # 300s timeout allows Render to wake up from cold start
+          echo "Knocking on the door to wake up Render..."
+          # This request might fail if the server is sleeping, but that's okay. It starts the boot process.
+          curl -I https://smartbursar-bot.onrender.com || true
+
+      - name: 2. Wait for Boot (60 Seconds)
+        run: |
+          echo "Waiting 60 seconds for the server to fully wake up..."
+          sleep 60
+
+      - name: 3. Trigger The Reminder (The Real Shot)
+        run: |
+          echo "Server should be awake now. Sending the command!"
+          # Now we send the real request with a longer timeout
           curl -X GET https://smartbursar-bot.onrender.com/trigger-template-reminders --max-time 300
