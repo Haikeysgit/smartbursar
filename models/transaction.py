@@ -25,6 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
+    from models.school import School
     from models.student import Student
     from models.user import User
 
@@ -48,6 +49,12 @@ class Transaction(Base, TimestampMixin):
     # -------------------------------------------------------------------------
     # Links
     # -------------------------------------------------------------------------
+    school_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("schools.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     student_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("students.id", ondelete="CASCADE"),
@@ -151,6 +158,10 @@ class Transaction(Base, TimestampMixin):
     # -------------------------------------------------------------------------
     # Relationships
     # -------------------------------------------------------------------------
+    school: Mapped["School"] = relationship(
+        "School",
+        foreign_keys=[school_id],
+    )
     student: Mapped["Student"] = relationship(
         "Student",
         back_populates="transactions",
