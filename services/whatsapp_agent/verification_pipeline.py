@@ -446,14 +446,7 @@ class VerificationPipeline:
                         f"Reply 'Confirmed' to approve or 'Fake' to reject."
                     )
                     
-                    # Forward the image to admin so they can see it
-                    whatsapp_client.send_document(
-                        admin_phone,
-                        file_path,
-                        filename="receipt_proof.jpg",
-                        caption=f"📎 Proof of Payment"
-                    )
-                    
+
                     # Add to Pending List
                     self.pending_verifications[transaction.id] = {
                         "parent_phone": parent_phone,
