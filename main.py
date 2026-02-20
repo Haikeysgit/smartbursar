@@ -74,9 +74,8 @@ app.mount("/receipts", StaticFiles(directory=str(RECEIPTS_DIR)), name="receipts"
 # Startup & Health
 # =============================================================================
 
-@app.on_event("startup")
-def startup_event():
-    """Ensure database tables are created on startup."""
+def _sync_startup():
+    """Heavy startup work — runs in a background thread so port binds immediately."""
     try:
         logger.info("Checking database schema...")
         init_db()
@@ -101,6 +100,14 @@ def startup_event():
         db.close()
     except Exception as e:
         logger.error(f"Failed to auto-seed data: {e}")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Ensure database tables are created on startup (non-blocking)."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, _sync_startup)
 
 @app.get("/health")
 async def health_check():

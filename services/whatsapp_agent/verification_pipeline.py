@@ -54,8 +54,15 @@ class VerificationPipeline:
         # Reverse lookup: admin_phone -> list of pending transaction_ids
         self.admin_pending: Dict[str, list] = {}
         
-        # Sync with DB on startup
-        self._reload_state_from_db()
+        # Lazy-load flag: DB state is loaded on first use, NOT at import time
+        # This prevents import-time DB queries that block Render port binding
+        self._state_loaded = False
+    
+    def _ensure_state_loaded(self):
+        """Lazy-load pending state from DB on first use."""
+        if not self._state_loaded:
+            self._reload_state_from_db()
+            self._state_loaded = True
         
     def _reload_state_from_db(self):
         """Restore pending state from database on restart."""
@@ -118,6 +125,7 @@ class VerificationPipeline:
         Process a receipt using 3-Layer Verification Logic.
         """
         import hashlib
+        self._ensure_state_loaded()
         
         try:
             logger.info(f"PIPELINE: Starting receipt processing for {parent_phone}")
@@ -643,6 +651,7 @@ class VerificationPipeline:
         Instead of relying on in-memory state, we query the DB for the 
         latest PENDING transaction for this school.
         """
+        self._ensure_state_loaded()
         with get_db_context() as db:
             # 1. Identify School(s) managed by this Admin
             # Normalize admin phone for lookup
@@ -799,82 +808,7 @@ class VerificationPipeline:
                     "Reply 'Confirmed' to approve or 'Fake' to reject."
                 )
                 return {"success": False, "error": "Ambiguous intent"}
-        
-        if intent == "UNKNOWN":
-            whatsapp_client.send_text(
-                admin_phone,
-                "❓ I didn't understand your response.\n\n"
-                "Reply 'Confirmed' to approve or 'Fake' to reject this payment."
-            )
-            return {"success": False, "error": "Unclear response"}
-        
-        # Update database with race condition protection
-        with get_db_context() as db:
-            # SECURITY: Use FOR UPDATE to lock row and check status
-            transaction = db.query(Transaction).filter(
-                Transaction.id == transaction_id,
-                Transaction.status == TransactionStatus.PENDING  # Only if still pending
-            ).with_for_update().first()
-            
-            if not transaction:
-                # Already processed by another admin
-                whatsapp_client.send_text(
-                    admin_phone,
-                    "⚠️ This payment was already processed by another admin."
-                )
-                return {"success": False, "error": "Already processed"}
-            
-            student = db.query(Student).filter(
-                Student.id == transaction.student_id
-            ).first()
-            
-            if intent == "APPROVED":
-                from services.payments.payment_recorder import process_successful_payment
-                
-                # Centralized processing (updates DB, generates PDF, sends WhatsApp)
-                process_successful_payment(
-                    db, 
-                    transaction.id, 
-                    verified_by_id=None,
-                    send_pdf=True
-                )
-                
-                # Confirm to admin
-                whatsapp_client.send_text(
-                    admin_phone,
-                    f"✅ Payment marked as VERIFIED.\n"
-                    f"Student {student.full_name}'s balance updated."
-                )
-                
-            else:  # REJECTED
-                transaction.status = TransactionStatus.REJECTED
-                db.commit()
-                
-                # Notify parent
-                parent_phone = verification_data["parent_phone"]
-                whatsapp_client.send_text(
-                    parent_phone,
-                    "❌ *Payment Not Verified*\n\n"
-                    "The admin could not verify your payment.\n"
-                    "Please contact the school directly for clarification."
-                )
-                
-                # Confirm to admin
-                whatsapp_client.send_text(
-                    admin_phone,
-                    "❌ Payment marked as REJECTED and flagged."
-                )
-            
-            # Clean up pending state
-            self.pending_verifications.pop(transaction_id, None)
-            if transaction_id in self.admin_pending.get(admin_phone, []):
-                self.admin_pending[admin_phone].remove(transaction_id)
-            
-            return {
-                "success": True,
-                "intent": intent,
-                "transaction_id": transaction_id
-            }
+
     
     # =========================================================================
     # Helper Methods
