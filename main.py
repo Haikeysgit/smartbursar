@@ -109,12 +109,12 @@ async def startup_event():
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _sync_startup)
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
-    """Simple health check for Railway deployment."""
+    """Simple health check for Railway/Render deployment."""
     return {"status": "healthy", "service": "whatsapp-webhook"}
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def home():
     """Keep-alive endpoint for UptimeRobot pinger."""
     return "SmartBursar is Active"
