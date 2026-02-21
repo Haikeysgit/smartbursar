@@ -1,4 +1,4 @@
 # Render Deployment - SmartBursar (Webhook API)
-# Uses gunicorn with uvicorn workers for ASGI support
+# Uses uvicorn directly (no gunicorn fork overhead on free tier)
 
-web: gunicorn main:app -k uvicorn.workers.UvicornWorker --workers 1 --preload --bind 0.0.0.0:$PORT
+web: uvicorn main:app --host 0.0.0.0 --port $PORT --log-level info
